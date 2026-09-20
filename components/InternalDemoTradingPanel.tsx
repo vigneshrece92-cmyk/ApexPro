@@ -695,7 +695,7 @@ export const InternalDemoTradingPanel: React.FC<InternalDemoTradingPanelProps> =
             </div>
 
             {/* Risk / Reward Bar */}
-            <div className="flex items-center justify-between text-[11px] px-3 py-1.5 rounded bg-terminal-bg border border-terminal-border/60 text-terminal-muted font-mono">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between text-[11px] px-3 py-2 rounded bg-terminal-bg border border-terminal-border/60 text-terminal-muted font-mono gap-1 sm:gap-0">
               <span>Risk:Reward: <strong className="text-white font-bold">{rrRatio}</strong></span>
               <span>Potential Loss: <strong className="text-rose-400">-${potentialLoss.toFixed(2)}</strong></span>
               <span>Potential Gain: <strong className="text-emerald-400">+${potentialGain.toFixed(2)}</strong></span>
@@ -720,15 +720,18 @@ export const InternalDemoTradingPanel: React.FC<InternalDemoTradingPanelProps> =
             {/* Big Execute Button */}
             <button
               onClick={handleExecute}
-              className={`w-full py-2.5 rounded-lg font-mono font-bold text-sm transition-all shadow-lg flex items-center justify-center gap-2 ${
+              className={`w-full py-2.5 px-3 rounded-lg font-mono font-bold text-xs sm:text-sm transition-all shadow-lg flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 text-center ${
                 action === "BUY"
                   ? "bg-bull hover:bg-bull/90 text-black shadow-bull/20"
                   : "bg-bear hover:bg-bear/90 text-white shadow-bear/20"
               }`}
             >
-              <Zap className="w-4 h-4" />
-              <span>
-                ⚡ Execute {action} {lotSize} XAUUSD @ ${currentOpenPrice.toFixed(2)} (SL: ${stopLoss.toFixed(2)} • TP: ${takeProfit.toFixed(2)})
+              <div className="flex items-center gap-1.5">
+                <Zap className="w-4 h-4 shrink-0" />
+                <span>Execute {action} {lotSize} XAUUSD @ ${currentOpenPrice.toFixed(2)}</span>
+              </div>
+              <span className="text-[10px] sm:text-xs opacity-85 font-normal sm:font-bold">
+                (SL: ${stopLoss.toFixed(2)} • TP: ${takeProfit.toFixed(2)})
               </span>
             </button>
           </div>
