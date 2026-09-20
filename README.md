@@ -51,28 +51,15 @@ Tailored specifically for **XAU/USD (Gold), XAG/USD (Silver), USD/JPY, GBP/USD, 
 
 ## 🚀 1-Click Vercel Deployment
 
-This project was built from scratch to be **100% Vercel-ready** with standard Next.js App Router and serverless Edge-compatible API routes.
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fvigneshrece92-cmyk%2FApexPro)
 
-### Deploying via Vercel CLI:
-```bash
-npm install -g vercel
-vercel
-```
+This project is **100% cloud-ready** and built with Next.js 14 App Router, requiring **no MT5 software or local Python background servers**. All simulated trading, automated trailing, 4H PO3, and ICT Silver Bullet calculations run in-browser and on Vercel serverless functions.
 
-### Deploying via GitHub:
-1. Push this folder to a GitHub repository:
-   ```bash
-   git init
-   git add .
-   git commit -m "Initial commit of ApexFX Pro Terminal"
-   git branch -M main
-   git remote add origin https://github.com/YOUR_USERNAME/apexfx-terminal.git
-   git push -u origin main
-   ```
-2. Go to [vercel.com](https://vercel.com) and click **"Add New Project"**.
-3. Import your GitHub repository.
-4. (Optional) Add `GEMINI_API_KEY` in **Environment Variables**.
-5. Click **Deploy**!
+### Direct 1-Click Import to Vercel:
+1. Open this direct import link: **[Deploy vigneshrece92-cmyk/ApexPro on Vercel](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fvigneshrece92-cmyk%2FApexPro)**
+2. Click **Deploy**.
+3. (Optional) In **Environment Variables**, add `GEMINI_API_KEY` for AI vision chart scanning.
+4. Your live institutional trading dashboard is ready in ~60 seconds!
 
 ---
 
