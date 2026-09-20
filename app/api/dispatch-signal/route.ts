@@ -1,4 +1,4 @@
-﻿import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { AIAnalysisResult } from "@/lib/types";
 
 export async function POST(req: NextRequest) {
@@ -78,7 +78,11 @@ export async function POST(req: NextRequest) {
     }
 
     if (platform === "telegram") {
-      if (!botToken || !chatId) {
+      const resolvedBotToken =
+        botToken || process.env.TG_BOT_TOKEN || "8418044614:AAEp4LY018UyKt4_v0Qj-7ux1eEZg8APAd0";
+      const resolvedChatId = chatId || process.env.TG_CHAT_ID || "-5005740750";
+
+      if (!resolvedBotToken || !resolvedChatId) {
         return NextResponse.json(
           { success: false, error: "Telegram Bot Token and Chat ID are required" },
           { status: 400 }
@@ -106,15 +110,15 @@ ${signal.smc ? `📍 <b>SMC Zone:</b> ${signal.smc.zone} (0.618 Fib: ${signal.sm
 💡 <b>Analysis:</b> ${signal.reasoning}
 ⚠️ <b>Invalidation:</b> ${signal.invalidationCriteria}
 ━━━━━━━━━━━━━━━━━━━━
-<i>ApexFX Institutional Intelligence</i>
+<i>ApexFX Institutional Intelligence • @profitcatcher_bot</i>
       `.trim();
 
-      const tgUrl = `https://api.telegram.org/bot${botToken}/sendMessage`;
+      const tgUrl = `https://api.telegram.org/bot${resolvedBotToken}/sendMessage`;
       const resp = await fetch(tgUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          chat_id: chatId,
+          chat_id: resolvedChatId,
           text: tgText,
           parse_mode: "HTML",
         }),

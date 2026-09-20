@@ -36,6 +36,7 @@ import {
   tickDemoPositions,
   evaluateAutoBot,
 } from "@/lib/demoTradingEngine";
+import { sendTelegramNotification } from "@/lib/telegramBroadcaster";
 
 export default function TerminalDashboard() {
   // Active State
@@ -145,10 +146,32 @@ export default function TerminalDashboard() {
     if (!quote) return;
     setDemoAccount((prev) => {
       const ticked = tickDemoPositions(prev, quote);
+      let next = ticked;
       if (ticked.auto_bot.enabled) {
-        return evaluateAutoBot(ticked, quote, alerts);
+        next = evaluateAutoBot(ticked, quote, alerts);
       }
-      return ticked;
+
+      // 1. Notify Telegram if Auto-Bot executed a new trade
+      if (next.open_positions.length > prev.open_positions.length) {
+        const newTrade = next.open_positions[0];
+        if (newTrade) {
+          sendTelegramNotification(
+            `🤖 <b>ApexFX Auto-Bot Executed Setup</b>\n━━━━━━━━━━━━━━━━━━━━\n<b>Action:</b> ${newTrade.type} ${newTrade.volume} ${newTrade.symbol}\n<b>Open Price:</b> $${newTrade.price_open.toFixed(2)}\n<b>Stop Loss:</b> $${newTrade.sl.toFixed(2)}\n<b>Take Profit:</b> $${newTrade.tp.toFixed(2)}\n<b>Rationale:</b> ${newTrade.comment}\n<b>Ticket:</b> #${newTrade.ticket}\n<i>ApexFX Autonomous Engine • 1:1000 Lev</i>`
+          );
+        }
+      }
+
+      // 2. Notify Telegram if a position was closed (Take Profit, Stop Loss, Break-Even)
+      if (next.history.length > prev.history.length) {
+        const closedTrade = next.history[0];
+        if (closedTrade) {
+          sendTelegramNotification(
+            `🎯 <b>ApexFX Position Exit</b>\n━━━━━━━━━━━━━━━━━━━━\n<b>Ticket:</b> #${closedTrade.ticket} ${closedTrade.type} ${closedTrade.symbol}\n<b>Result:</b> ${closedTrade.profit >= 0 ? "🟢 Profit: +" : "🔴 Loss: "}$${Math.abs(closedTrade.profit).toFixed(2)}\n<b>Exit Reason:</b> ${closedTrade.close_reason}\n<b>Close Price:</b> $${closedTrade.price_close.toFixed(2)}\n<i>ApexFX Virtual Broker</i>`
+          );
+        }
+      }
+
+      return next;
     });
   }, [quote, alerts]);
 

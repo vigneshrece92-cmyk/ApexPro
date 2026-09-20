@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import React, { useState, useEffect } from "react";
 import { AIAnalysisResult } from "@/lib/types";
@@ -24,6 +24,9 @@ interface SignalDispatcherModalProps {
 type ScriptFormat = "mql5" | "mql4" | "ctrader" | "copier";
 type WebhookPlatform = "discord" | "telegram";
 
+const DEFAULT_TG_BOT_TOKEN = "8418044614:AAEp4LY018UyKt4_v0Qj-7ux1eEZg8APAd0";
+const DEFAULT_TG_CHAT_ID = "-5005740750";
+
 export const SignalDispatcherModal: React.FC<SignalDispatcherModalProps> = ({
   isOpen,
   onClose,
@@ -34,25 +37,25 @@ export const SignalDispatcherModal: React.FC<SignalDispatcherModalProps> = ({
   const [copiedScript, setCopiedScript] = useState(false);
 
   // Webhook state
-  const [platform, setPlatform] = useState<WebhookPlatform>("discord");
+  const [platform, setPlatform] = useState<WebhookPlatform>("telegram");
   const [discordWebhookUrl, setDiscordWebhookUrl] = useState("");
-  const [tgBotToken, setTgBotToken] = useState("");
-  const [tgChatId, setTgChatId] = useState("");
+  const [tgBotToken, setTgBotToken] = useState(DEFAULT_TG_BOT_TOKEN);
+  const [tgChatId, setTgChatId] = useState(DEFAULT_TG_CHAT_ID);
   const [isSending, setIsSending] = useState(false);
   const [dispatchStatus, setDispatchStatus] = useState<{
     type: "success" | "error" | null;
     message: string;
   }>({ type: null, message: "" });
 
-  // Load saved credentials
+  // Load saved credentials or fall back to defaults
   useEffect(() => {
     if (typeof window !== "undefined") {
       const savedDiscord = localStorage.getItem("apex_discord_webhook");
       if (savedDiscord) setDiscordWebhookUrl(savedDiscord);
       const savedTgToken = localStorage.getItem("apex_tg_token");
-      if (savedTgToken) setTgBotToken(savedTgToken);
+      setTgBotToken(savedTgToken || DEFAULT_TG_BOT_TOKEN);
       const savedTgChat = localStorage.getItem("apex_tg_chat_id");
-      if (savedTgChat) setTgChatId(savedTgChat);
+      setTgChatId(savedTgChat || DEFAULT_TG_CHAT_ID);
     }
   }, []);
 

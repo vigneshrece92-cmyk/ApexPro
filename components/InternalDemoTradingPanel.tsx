@@ -18,6 +18,7 @@ import {
   Lock,
   Cpu,
   Terminal,
+  Send,
 } from "lucide-react";
 import {
   DemoAccountState,
@@ -30,6 +31,7 @@ import {
   resetDemoAccount,
   isForexMarketOpen,
 } from "@/lib/demoTradingEngine";
+import { sendTelegramNotification } from "@/lib/telegramBroadcaster";
 import { Quote } from "@/lib/types";
 
 interface InternalDemoTradingPanelProps {
@@ -117,6 +119,10 @@ export const InternalDemoTradingPanel: React.FC<InternalDemoTradingPanelProps> =
     if (res.success) {
       onUpdateAccount(res.state);
       setStatusMessage({ type: "success", text: res.message });
+      const newPos = res.state.open_positions[0];
+      sendTelegramNotification(
+        `⚡ <b>ApexFX Trade Executed</b>\n━━━━━━━━━━━━━━━━━━━━\n<b>Action:</b> ${action} ${lotSize} XAUUSD\n<b>Price:</b> $${currentOpenPrice.toFixed(2)}\n<b>Stop Loss:</b> $${stopLoss.toFixed(2)}\n<b>Take Profit:</b> $${takeProfit.toFixed(2)}\n<b>Ticket:</b> #${newPos ? newPos.ticket : ""}\n<i>ApexFX Virtual Broker • 1:1000 Leverage</i>`
+      );
     } else {
       setStatusMessage({ type: "error", text: res.message });
     }
@@ -127,6 +133,12 @@ export const InternalDemoTradingPanel: React.FC<InternalDemoTradingPanelProps> =
     if (res.success) {
       onUpdateAccount(res.state);
       setStatusMessage({ type: "success", text: res.message });
+      const closed = res.state.history[0];
+      if (closed) {
+        sendTelegramNotification(
+          `🎯 <b>ApexFX Trade Closed</b>\n━━━━━━━━━━━━━━━━━━━━\n<b>Position:</b> #${ticket} ${closed.type} ${closed.symbol}\n<b>P&L:</b> ${closed.profit >= 0 ? "🟢 +" : "🔴 -"}$${Math.abs(closed.profit).toFixed(2)}\n<b>Close Price:</b> $${closed.price_close.toFixed(2)}\n<b>Exit Reason:</b> ${closed.close_reason}\n<i>ApexFX Virtual Broker</i>`
+        );
+      }
     } else {
       setStatusMessage({ type: "error", text: res.message });
     }
@@ -137,8 +149,44 @@ export const InternalDemoTradingPanel: React.FC<InternalDemoTradingPanelProps> =
     if (res.success) {
       onUpdateAccount(res.state);
       setStatusMessage({ type: "success", text: res.message });
+      sendTelegramNotification(
+        `🛡️ <b>ApexFX Stop Loss Moved to Break-Even</b>\n━━━━━━━━━━━━━━━━━━━━\n<b>Position:</b> #${ticket}\n<b>Status:</b> Risk-Free Trade Secured (+0.20 buffer)`
+      );
     } else {
       setStatusMessage({ type: "error", text: res.message });
+    }
+  };
+
+  const [isTestingTg, setIsTestingTg] = useState(false);
+  const handleTestTelegram = async () => {
+    setIsTestingTg(true);
+    try {
+      const res = await fetch("/api/telegram-broadcast", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message: `⚡ <b>ApexFX Pro Terminal — Telegram Broadcast Active</b>\n━━━━━━━━━━━━━━━━━━━━\n<b>Status:</b> 🟢 Connected\n<b>Bot:</b> @profitcatcher_bot\n<b>Account Balance:</b> $${account.balance.toLocaleString("en-US", { minimumFractionDigits: 2 })}\n<b>Open Positions:</b> ${account.open_positions.length}\n<b>Auto-Bot:</b> ${account.auto_bot.enabled ? "ACTIVE 🟢" : "PAUSED ⏸️"}\n<b>Timestamp:</b> ${new Date().toLocaleTimeString()} UTC`,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setStatusMessage({
+          type: "success",
+          text: "✅ Telegram Ping delivered to @profitcatcher_bot (Chat: -5005740750)!",
+        });
+      } else {
+        setStatusMessage({
+          type: "error",
+          text: `Telegram ping failed: ${data.error}`,
+        });
+      }
+    } catch {
+      setStatusMessage({
+        type: "error",
+        text: "Failed to connect to Telegram endpoint",
+      });
+    } finally {
+      setIsTestingTg(false);
     }
   };
 
@@ -511,12 +559,26 @@ export const InternalDemoTradingPanel: React.FC<InternalDemoTradingPanelProps> =
 
             {/* Live Bot Audit Terminal Console */}
             <div className="mt-3 bg-[#05070D] rounded-lg border border-terminal-border/80 p-2.5 font-mono text-[11px]">
-              <div className="flex items-center justify-between pb-1.5 mb-1.5 border-b border-terminal-border/50 text-gray-400 text-[10px]">
+              <div className="flex items-center justify-between pb-1.5 mb-1.5 border-b border-terminal-border/50 text-gray-400 text-[10px] flex-wrap gap-2">
                 <span className="flex items-center gap-1">
                   <Terminal className="w-3 h-3 text-blue-400" />
                   <span>AUTONOMOUS ENGINE LOG AUDIT</span>
                 </span>
-                <span>{account.auto_bot.logs.length} events logged</span>
+                <div className="flex items-center gap-2">
+                  <span className="flex items-center gap-1 text-[10px] text-sky-400 bg-sky-950/60 px-2 py-0.5 rounded border border-sky-500/30 font-mono">
+                    <Send className="w-2.5 h-2.5" />
+                    <span>TG: @profitcatcher_bot</span>
+                  </span>
+                  <button
+                    onClick={handleTestTelegram}
+                    disabled={isTestingTg}
+                    className="text-[10px] px-2 py-0.5 rounded bg-sky-600/30 hover:bg-sky-600/50 text-sky-300 hover:text-white border border-sky-500/40 font-mono transition-all disabled:opacity-50"
+                    title="Send test ping to Telegram channel"
+                  >
+                    {isTestingTg ? "Pinging..." : "Test Ping"}
+                  </button>
+                  <span>{account.auto_bot.logs.length} events</span>
+                </div>
               </div>
               <div className="max-h-24 overflow-y-auto space-y-1 scrollbar-thin">
                 {account.auto_bot.logs.map((log) => (
