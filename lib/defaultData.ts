@@ -410,11 +410,15 @@ export function generateRealisticCandles(
     }
 
     const open = +targetPrice.toFixed(quote.pipPrecision);
-    const noise = (Math.random() - 0.48) * range * 0.08;
+    // Deterministic pseudo-random generation based on index to prevent SSR/client hydration mismatch
+    const pr1 = Math.abs(Math.sin(i * 12.9898 + 1.234)) % 1;
+    const pr2 = Math.abs(Math.cos(i * 4.8932 + 2.345)) % 1;
+    const pr3 = Math.abs(Math.sin(i * 7.1234 + 3.456)) % 1;
+    const noise = (pr1 - 0.48) * range * 0.08;
     const close = +(open + noise).toFixed(quote.pipPrecision);
-    const high = +(Math.max(open, close) + Math.random() * range * 0.05).toFixed(quote.pipPrecision);
-    const low = +(Math.min(open, close) - Math.random() * range * 0.05).toFixed(quote.pipPrecision);
-    const volume = Math.floor(Math.random() * 400) + 150;
+    const high = +(Math.max(open, close) + pr2 * range * 0.05).toFixed(quote.pipPrecision);
+    const low = +(Math.min(open, close) - pr3 * range * 0.05).toFixed(quote.pipPrecision);
+    const volume = Math.floor(pr1 * 400) + 150;
 
     candles.push({ time, open, high, low, close, volume });
   }

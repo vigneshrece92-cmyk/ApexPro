@@ -147,16 +147,65 @@ export function loadDemoAccount(): DemoAccountState {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return INITIAL_ACCOUNT_STATE;
     const parsed = JSON.parse(raw);
+
+    const safeBalance = typeof parsed.balance === "number" && !isNaN(parsed.balance) ? parsed.balance : INITIAL_DEMO_BALANCE;
+    const safeEquity = typeof parsed.equity === "number" && !isNaN(parsed.equity) ? parsed.equity : safeBalance;
+    const safeMargin = typeof parsed.margin === "number" && !isNaN(parsed.margin) ? parsed.margin : 0;
+    const safeMarginFree = typeof parsed.margin_free === "number" && !isNaN(parsed.margin_free) ? parsed.margin_free : safeBalance;
+    const safeOpenProfit = typeof parsed.open_profit === "number" && !isNaN(parsed.open_profit) ? parsed.open_profit : 0;
+
+    const safeOpenPositions: DemoPosition[] = Array.isArray(parsed.open_positions)
+      ? parsed.open_positions
+          .filter((p: any) => p && typeof p === "object")
+          .map((p: any) => ({
+            ticket: typeof p.ticket === "number" ? p.ticket : Math.floor(1000000 + Math.random() * 9000000),
+            symbol: (p.symbol as AssetSymbol) || "XAUUSD",
+            type: p.type === "SELL" ? "SELL" : "BUY",
+            volume: typeof p.volume === "number" && !isNaN(p.volume) ? p.volume : 0.02,
+            price_open: typeof p.price_open === "number" && !isNaN(p.price_open) ? p.price_open : 4379.0,
+            sl: typeof p.sl === "number" && !isNaN(p.sl) ? p.sl : 4360.0,
+            tp: typeof p.tp === "number" && !isNaN(p.tp) ? p.tp : 4400.0,
+            price_current: typeof p.price_current === "number" && !isNaN(p.price_current) ? p.price_current : (p.price_open || 4379.0),
+            profit: typeof p.profit === "number" && !isNaN(p.profit) ? p.profit : 0,
+            comment: typeof p.comment === "string" ? p.comment : "ApexFX 4H PO3",
+            time: typeof p.time === "number" ? p.time : Date.now(),
+            be_triggered: !!p.be_triggered,
+          }))
+      : [];
+
+    const safeHistory: ClosedTrade[] = Array.isArray(parsed.history)
+      ? parsed.history
+          .filter((h: any) => h && typeof h === "object")
+          .map((h: any) => ({
+            ticket: typeof h.ticket === "number" ? h.ticket : Math.floor(1000000 + Math.random() * 9000000),
+            symbol: (h.symbol as AssetSymbol) || "XAUUSD",
+            type: h.type === "SELL" ? "SELL" : "BUY",
+            volume: typeof h.volume === "number" && !isNaN(h.volume) ? h.volume : 0.02,
+            price_open: typeof h.price_open === "number" && !isNaN(h.price_open) ? h.price_open : 4379.0,
+            price_close: typeof h.price_close === "number" && !isNaN(h.price_close) ? h.price_close : 4380.0,
+            sl: typeof h.sl === "number" && !isNaN(h.sl) ? h.sl : 4360.0,
+            tp: typeof h.tp === "number" && !isNaN(h.tp) ? h.tp : 4400.0,
+            profit: typeof h.profit === "number" && !isNaN(h.profit) ? h.profit : 0,
+            return_percent: typeof h.return_percent === "number" && !isNaN(h.return_percent) ? h.return_percent : 0,
+            open_time: typeof h.open_time === "number" ? h.open_time : Date.now() - 60000,
+            close_time: typeof h.close_time === "number" ? h.close_time : Date.now(),
+            close_reason: typeof h.close_reason === "string" ? h.close_reason : "Manual Exit",
+          }))
+      : [];
+
     return {
-      ...INITIAL_ACCOUNT_STATE,
-      ...parsed,
+      balance: safeBalance,
+      equity: safeEquity,
+      margin: safeMargin,
+      margin_free: safeMarginFree,
       leverage: DEFAULT_LEVERAGE, // Enforce 1:1000 leverage
-      open_positions: Array.isArray(parsed.open_positions) ? parsed.open_positions : [],
-      history: Array.isArray(parsed.history) ? parsed.history : [],
+      open_profit: safeOpenProfit,
+      open_positions: safeOpenPositions,
+      history: safeHistory,
       auto_bot: {
         ...INITIAL_ACCOUNT_STATE.auto_bot,
         ...(parsed.auto_bot || {}),
-        market_mode: parsed.auto_bot?.market_mode || "STRICT_REAL",
+        market_mode: parsed.auto_bot?.market_mode === "24_7_PRACTICE" ? "24_7_PRACTICE" : "STRICT_REAL",
         logs: Array.isArray(parsed.auto_bot?.logs) ? parsed.auto_bot.logs : INITIAL_ACCOUNT_STATE.auto_bot.logs,
       },
     };
@@ -271,15 +320,18 @@ export function executeDemoTrade(
   }
 
   // Enforce safe lot bounds for $3,000 account
-  const safeVolume = Math.max(0.01, Math.min(0.05, Math.round(volume * 100) / 100));
-  const openPrice = type === "BUY" ? quote.ask : quote.bid;
+  const safeVolume = Math.max(0.01, Math.min(0.05, Math.round((volume || 0.02) * 100) / 100));
+  const openPrice = type === "BUY" ? (quote.ask || quote.bid || 4379.0) : (quote.bid || quote.ask || 4379.0);
+  const safeSL = typeof sl === "number" && !isNaN(sl) ? Math.round(sl * 100) / 100 : (type === "BUY" ? openPrice - 15.0 : openPrice + 15.0);
+  const safeTP = typeof tp === "number" && !isNaN(tp) ? Math.round(tp * 100) / 100 : (type === "BUY" ? openPrice + 30.0 : openPrice - 30.0);
 
-  const requiredMargin = calculateRequiredMargin(symbol, safeVolume, openPrice, state.leverage);
-  if (state.margin_free < requiredMargin) {
+  const requiredMargin = calculateRequiredMargin(symbol, safeVolume, openPrice, state.leverage || 1000);
+  const marginFree = typeof state.margin_free === "number" && !isNaN(state.margin_free) ? state.margin_free : INITIAL_DEMO_BALANCE;
+  if (marginFree < requiredMargin) {
     return {
       success: false,
       state,
-      message: `Insufficient free margin. Required: $${requiredMargin.toFixed(2)}, Available: $${state.margin_free.toFixed(2)}`,
+      message: `Insufficient free margin. Required: $${requiredMargin.toFixed(2)}, Available: $${marginFree.toFixed(2)}`,
     };
   }
 
@@ -290,8 +342,8 @@ export function executeDemoTrade(
     type,
     volume: safeVolume,
     price_open: openPrice,
-    sl: Math.round(sl * 100) / 100,
-    tp: Math.round(tp * 100) / 100,
+    sl: safeSL,
+    tp: safeTP,
     price_current: openPrice,
     profit: 0,
     comment: comment || "ApexFX 4H PO3",
@@ -299,18 +351,20 @@ export function executeDemoTrade(
     be_triggered: false,
   };
 
-  const nextPositions = [newPosition, ...state.open_positions];
-  const newMargin = Math.round((state.margin + requiredMargin) * 100) / 100;
-  const newMarginFree = Math.round((state.equity - newMargin) * 100) / 100;
+  const nextPositions = [newPosition, ...(state.open_positions || [])];
+  const currentMargin = typeof state.margin === "number" && !isNaN(state.margin) ? state.margin : 0;
+  const currentEquity = typeof state.equity === "number" && !isNaN(state.equity) ? state.equity : INITIAL_DEMO_BALANCE;
+  const newMargin = Math.round((currentMargin + requiredMargin) * 100) / 100;
+  const newMarginFree = Math.round((currentEquity - newMargin) * 100) / 100;
 
   const logMessage: AutoBotLog = {
-    id: `log-${Date.now()}-${Math.random()}`,
+    id: `log-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
     timestamp: Date.now(),
     type: "trade",
-    message: `[Order #${newTicket}] ${type} ${safeVolume} ${symbol} @ $${openPrice.toFixed(2)} executed. SL: $${sl.toFixed(2)}, TP: $${tp.toFixed(2)}.`,
+    message: `[Order #${newTicket}] ${type} ${safeVolume} ${symbol} @ $${openPrice.toFixed(2)} executed. SL: $${safeSL.toFixed(2)}, TP: $${safeTP.toFixed(2)}.`,
   };
 
-  const nextLogs = [logMessage, ...state.auto_bot.logs].slice(0, 50);
+  const nextLogs = [logMessage, ...(state.auto_bot?.logs || [])].slice(0, 50);
 
   const nextState: DemoAccountState = {
     ...state,
@@ -595,14 +649,15 @@ export function tickDemoPositions(
 
 /**
  * Autonomous 4H PO3 Auto-Bot Engine
- * Scans active 4H Breakout/Retest and AMD setups and auto-executes if enabled
+ * Scans active 4H Breakout/Retest, AMD, FVG, Order Block, and Silver Bullet setups and auto-executes if enabled
  */
 export function evaluateAutoBot(
   state: DemoAccountState,
   quote: Quote,
-  alerts: InstitutionalAlert[]
+  alerts: InstitutionalAlert[],
+  allQuotes?: Record<AssetSymbol, Quote>
 ): DemoAccountState {
-  if (!state.auto_bot.enabled || quote.symbol !== "XAUUSD") {
+  if (!state.auto_bot || !state.auto_bot.enabled) {
     return state;
   }
 
@@ -615,14 +670,20 @@ export function evaluateAutoBot(
   }
 
   // Limit max concurrent open positions to 2 to strictly protect the $3,000 account
-  if (state.open_positions.length >= 2) {
+  const openPositions = Array.isArray(state.open_positions) ? state.open_positions : [];
+  if (openPositions.length >= 2) {
     return state;
   }
 
-  // Find confirmed 4H Breakout, AMD, FVG, Order Block, or Silver Bullet alerts on XAUUSD
+  if (!Array.isArray(alerts) || alerts.length === 0) {
+    return state;
+  }
+
+  // Find confirmed alerts (4H Breakout, AMD Judas, FVG, Order Block, Silver Bullet)
+  // Prioritize XAUUSD first, then any other confirmed setup
   const eligibleAlert = alerts.find((a) => {
-    if (a.symbol !== "XAUUSD") return false;
-    const isAMD = a.patternType === "AMD_ACCUMULATION_DISTRIBUTION" && a.amdPhase?.includes("Distribution");
+    if (!a || !a.symbol) return false;
+    const isAMD = a.patternType === "AMD_ACCUMULATION_DISTRIBUTION" && typeof a.amdPhase === "string" && a.amdPhase.includes("Distribution");
     const is4HBreakout = a.patternType === "4H_BREAKOUT_RETEST" && a.status === "CONFIRMED";
     const isFVG = a.patternType === "FVG_MITIGATION" && a.status === "CONFIRMED";
     const isOB = (a.patternType as string) === "ORDER_BLOCK_MITIGATION" && a.status === "CONFIRMED";
@@ -632,18 +693,39 @@ export function evaluateAutoBot(
 
   if (!eligibleAlert) return state;
 
-  // Check if a position already exists for this alert id or recently opened
-  const recentTrade = state.open_positions.some(
-    (p) => p.comment.includes(eligibleAlert.id.slice(0, 8)) || Date.now() - p.time < 300000 // 5 minutes cool down
+  // Resolve matching quote for this alert
+  const targetQuote = allQuotes?.[eligibleAlert.symbol] || (quote?.symbol === eligibleAlert.symbol ? quote : null);
+  if (!targetQuote || typeof targetQuote.bid !== "number" || typeof targetQuote.ask !== "number") {
+    return state;
+  }
+
+  // Check if a position already exists for this alert id or recently opened (5 min cooldown)
+  const alertIdPrefix = (eligibleAlert.id || "alert").slice(0, 8);
+  const recentTrade = openPositions.some(
+    (p) =>
+      (typeof p.comment === "string" && p.comment.includes(alertIdPrefix)) ||
+      (typeof p.time === "number" && Date.now() - p.time < 300000)
   );
   if (recentTrade) return state;
 
-  const action: "BUY" | "SELL" = eligibleAlert.direction.includes("BUY") ? "BUY" : "SELL";
-  const sl = eligibleAlert.stopLoss;
-  const tp = eligibleAlert.takeProfit1;
-  const slDist = Math.abs((action === "BUY" ? quote.ask : quote.bid) - sl);
+  const action: "BUY" | "SELL" = (eligibleAlert.direction || "BUY").includes("BUY") ? "BUY" : "SELL";
+  const openPrice = action === "BUY" ? targetQuote.ask : targetQuote.bid;
 
-  // Standard fixed 0.02 lot sizing across all pairs
+  const sl =
+    typeof eligibleAlert.stopLoss === "number" && !isNaN(eligibleAlert.stopLoss)
+      ? eligibleAlert.stopLoss
+      : action === "BUY"
+      ? openPrice - 15.0
+      : openPrice + 15.0;
+
+  const tp =
+    typeof eligibleAlert.takeProfit1 === "number" && !isNaN(eligibleAlert.takeProfit1)
+      ? eligibleAlert.takeProfit1
+      : action === "BUY"
+      ? openPrice + 30.0
+      : openPrice - 30.0;
+
+  // Standard fixed 0.02 lot sizing across all pairs (1:1000 leverage)
   const safeLot = 0.02;
 
   const patternLabel =
@@ -658,28 +740,29 @@ export function evaluateAutoBot(
       : "Institutional Order Block Mitigation";
 
   const botLog: AutoBotLog = {
-    id: `bot-scan-${Date.now()}`,
+    id: `bot-scan-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
     timestamp: Date.now(),
     type: "info",
-    message: `⚡ [Auto-Bot Trigger] Confirmed ${patternLabel} detected! Executing standard 0.02 lots (1:1000 leverage).`,
+    message: `⚡ [Auto-Bot Trigger] Confirmed ${patternLabel} on ${eligibleAlert.symbol} detected! Executing standard 0.02 lots (1:1000 leverage).`,
   };
 
+  const currentLogs = Array.isArray(state.auto_bot?.logs) ? state.auto_bot.logs : [];
   const stateWithLog: DemoAccountState = {
     ...state,
     auto_bot: {
       ...state.auto_bot,
-      logs: [botLog, ...state.auto_bot.logs].slice(0, 50),
+      logs: [botLog, ...currentLogs].slice(0, 50),
     },
   };
 
   const tradeRes = executeDemoTrade(stateWithLog, {
-    symbol: "XAUUSD",
+    symbol: eligibleAlert.symbol,
     type: action,
     volume: safeLot,
-    quote,
+    quote: targetQuote,
     sl,
     tp,
-    comment: `PO3_Bot_${eligibleAlert.id.slice(0, 8)}`,
+    comment: `PO3_Bot_${alertIdPrefix}`,
   });
 
   return tradeRes.state;

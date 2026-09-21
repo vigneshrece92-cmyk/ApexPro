@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
   AssetSymbol,
   TimeFrame,
@@ -32,6 +32,7 @@ import { MT5TradingPanel } from "@/components/MT5TradingPanel";
 import { InternalDemoTradingPanel } from "@/components/InternalDemoTradingPanel";
 import {
   DemoAccountState,
+  INITIAL_ACCOUNT_STATE,
   loadDemoAccount,
   tickDemoPositions,
   evaluateAutoBot,
@@ -39,6 +40,9 @@ import {
 import { sendTelegramNotification } from "@/lib/telegramBroadcaster";
 
 export default function TerminalDashboard() {
+  // Client mount hydration guard
+  const [isMounted, setIsMounted] = useState(false);
+
   // Active State
   const [activeSymbol, setActiveSymbol] = useState<AssetSymbol>("XAUUSD");
   const [timeframe, setTimeframe] = useState<TimeFrame>("1h");
@@ -51,7 +55,9 @@ export default function TerminalDashboard() {
   const [isAlertsHubOpen, setIsAlertsHubOpen] = useState(false);
 
   // Internal Institutional Demo Broker State ($3,000 Balance - 100% Vercel Ready)
-  const [demoAccount, setDemoAccount] = useState<DemoAccountState>(() => loadDemoAccount());
+  const [demoAccount, setDemoAccount] = useState<DemoAccountState>(INITIAL_ACCOUNT_STATE);
+  const notifiedTicketsRef = useRef<Set<number>>(new Set());
+  const prevHistoryCountRef = useRef<number>(0);
   const [isDemoPanelOpen, setIsDemoPanelOpen] = useState(false);
   const [demoPrefillSetup, setDemoPrefillSetup] = useState<{
     action: "BUY" | "SELL";
@@ -88,8 +94,17 @@ export default function TerminalDashboard() {
   const [isDispatcherOpen, setIsDispatcherOpen] = useState(false);
   const [geminiApiKey, setGeminiApiKey] = useState<string>("");
 
-  // Load API key from localStorage on mount
+  // Safely hydrate client-only state from localStorage on mount (eliminates SSR hydration mismatch)
   useEffect(() => {
+    setIsMounted(true);
+    const loaded = loadDemoAccount();
+    setDemoAccount(loaded);
+    prevHistoryCountRef.current = Array.isArray(loaded.history) ? loaded.history.length : 0;
+    if (Array.isArray(loaded.open_positions)) {
+      loaded.open_positions.forEach((p) => {
+        if (p?.ticket) notifiedTicketsRef.current.add(p.ticket);
+      });
+    }
     if (typeof window !== "undefined") {
       const saved = localStorage.getItem("apex_gemini_api_key");
       if (saved) setGeminiApiKey(saved);
@@ -141,39 +156,60 @@ export default function TerminalDashboard() {
     return () => clearInterval(interval);
   }, []);
 
-  // Tick demo positions and evaluate autonomous PO3 bot on live market updates
+  // 1. Dispatch Telegram notifications cleanly and purely on position changes (NEVER inside state updater)
   useEffect(() => {
-    if (!quote) return;
-    setDemoAccount((prev) => {
-      const ticked = tickDemoPositions(prev, quote);
-      let next = ticked;
-      if (ticked.auto_bot.enabled) {
-        next = evaluateAutoBot(ticked, quote, alerts);
-      }
+    if (!isMounted) return;
 
-      // 1. Notify Telegram if Auto-Bot executed a new trade
-      if (next.open_positions.length > prev.open_positions.length) {
-        const newTrade = next.open_positions[0];
-        if (newTrade) {
+    // Check for newly opened positions
+    if (Array.isArray(demoAccount.open_positions)) {
+      for (const pos of demoAccount.open_positions) {
+        if (pos?.ticket && !notifiedTicketsRef.current.has(pos.ticket)) {
+          notifiedTicketsRef.current.add(pos.ticket);
+          const openPrice = typeof pos.price_open === "number" ? pos.price_open.toFixed(2) : "0.00";
+          const sl = typeof pos.sl === "number" ? pos.sl.toFixed(2) : "0.00";
+          const tp = typeof pos.tp === "number" ? pos.tp.toFixed(2) : "0.00";
           sendTelegramNotification(
-            `🤖 <b>ApexFX Auto-Bot Executed Setup</b>\n━━━━━━━━━━━━━━━━━━━━\n<b>Action:</b> ${newTrade.type} ${newTrade.volume} ${newTrade.symbol}\n<b>Open Price:</b> $${newTrade.price_open.toFixed(2)}\n<b>Stop Loss:</b> $${newTrade.sl.toFixed(2)}\n<b>Take Profit:</b> $${newTrade.tp.toFixed(2)}\n<b>Rationale:</b> ${newTrade.comment}\n<b>Ticket:</b> #${newTrade.ticket}\n<i>ApexFX Autonomous Engine • 1:1000 Lev</i>`
-          );
+            `🤖 <b>ApexFX Auto-Bot Executed Setup</b>\n━━━━━━━━━━━━━━━━━━━━\n<b>Action:</b> ${pos.type} ${pos.volume} ${pos.symbol}\n<b>Open Price:</b> $${openPrice}\n<b>Stop Loss:</b> $${sl}\n<b>Take Profit:</b> $${tp}\n<b>Rationale:</b> ${pos.comment || "4H PO3 Setup"}\n<b>Ticket:</b> #${pos.ticket}\n<i>ApexFX Autonomous Engine • 1:1000 Lev</i>`
+          ).catch((err) => console.warn("Telegram broadcast error:", err));
         }
       }
+    }
 
-      // 2. Notify Telegram if a position was closed (Take Profit, Stop Loss, Break-Even)
-      if (next.history.length > prev.history.length) {
-        const closedTrade = next.history[0];
-        if (closedTrade) {
+    // Check for newly closed positions
+    const historyList = Array.isArray(demoAccount.history) ? demoAccount.history : [];
+    if (historyList.length > prevHistoryCountRef.current) {
+      const newClosed = historyList.slice(0, historyList.length - prevHistoryCountRef.current);
+      for (const closed of newClosed) {
+        if (closed?.ticket) {
+          const profit = typeof closed.profit === "number" ? closed.profit : 0;
+          const closePrice = typeof closed.price_close === "number" ? closed.price_close.toFixed(2) : "0.00";
           sendTelegramNotification(
-            `🎯 <b>ApexFX Position Exit</b>\n━━━━━━━━━━━━━━━━━━━━\n<b>Ticket:</b> #${closedTrade.ticket} ${closedTrade.type} ${closedTrade.symbol}\n<b>Result:</b> ${closedTrade.profit >= 0 ? "🟢 Profit: +" : "🔴 Loss: "}$${Math.abs(closedTrade.profit).toFixed(2)}\n<b>Exit Reason:</b> ${closedTrade.close_reason}\n<b>Close Price:</b> $${closedTrade.price_close.toFixed(2)}\n<i>ApexFX Virtual Broker</i>`
-          );
+            `🎯 <b>ApexFX Position Exit</b>\n━━━━━━━━━━━━━━━━━━━━\n<b>Ticket:</b> #${closed.ticket} ${closed.type} ${closed.symbol}\n<b>Result:</b> ${profit >= 0 ? "🟢 Profit: +" : "🔴 Loss: "}$${Math.abs(profit).toFixed(2)}\n<b>Exit Reason:</b> ${closed.close_reason || "Market Exit"}\n<b>Close Price:</b> $${closePrice}\n<i>ApexFX Virtual Broker</i>`
+          ).catch((err) => console.warn("Telegram broadcast error:", err));
         }
       }
+    }
+    prevHistoryCountRef.current = historyList.length;
+  }, [demoAccount.open_positions, demoAccount.history, isMounted]);
 
-      return next;
-    });
-  }, [quote, alerts]);
+  // 2. Pure state tick & auto-bot evaluation on live quotes and 5s heartbeat
+  useEffect(() => {
+    if (!isMounted || !quote) return;
+
+    const runEngineTick = () => {
+      setDemoAccount((prev) => {
+        const ticked = tickDemoPositions(prev, quote);
+        if (ticked?.auto_bot?.enabled) {
+          return evaluateAutoBot(ticked, quote, alerts, allQuotes);
+        }
+        return ticked;
+      });
+    };
+
+    runEngineTick();
+    const heartbeat = setInterval(runEngineTick, 5000);
+    return () => clearInterval(heartbeat);
+  }, [quote, alerts, allQuotes, isMounted]);
 
   const handleSaveApiKey = (key: string) => {
     setGeminiApiKey(key);

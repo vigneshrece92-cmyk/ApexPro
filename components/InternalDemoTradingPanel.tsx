@@ -29,6 +29,7 @@ import {
   closeDemoPosition,
   setPositionBreakEven,
   resetDemoAccount,
+  saveDemoAccount,
   isForexMarketOpen,
 } from "@/lib/demoTradingEngine";
 import { sendTelegramNotification } from "@/lib/telegramBroadcaster";
@@ -67,6 +68,7 @@ export const InternalDemoTradingPanel: React.FC<InternalDemoTradingPanelProps> =
   }>({ type: null, text: "" });
 
   const round2 = (n: number) => Math.round(n * 100) / 100;
+  const fmt2 = (v?: number, fallback = "0.00") => (typeof v === "number" && !isNaN(v) ? v.toFixed(2) : fallback);
 
   // Sync prefill setup when an alert is clicked
   useEffect(() => {
@@ -75,23 +77,27 @@ export const InternalDemoTradingPanel: React.FC<InternalDemoTradingPanelProps> =
       if (prefillSetup.stopLoss) setStopLoss(round2(prefillSetup.stopLoss));
       if (prefillSetup.takeProfit1) setTakeProfit(round2(prefillSetup.takeProfit1));
     } else if (liveQuote) {
+      const ask = liveQuote.ask || 4379.38;
+      const bid = liveQuote.bid || 4379.00;
       if (action === "BUY") {
-        setStopLoss(round2(liveQuote.ask - 15.0));
-        setTakeProfit(round2(liveQuote.ask + 30.0));
+        setStopLoss(round2(ask - 15.0));
+        setTakeProfit(round2(ask + 30.0));
       } else {
-        setStopLoss(round2(liveQuote.bid + 15.0));
-        setTakeProfit(round2(liveQuote.bid - 30.0));
+        setStopLoss(round2(bid + 15.0));
+        setTakeProfit(round2(bid - 30.0));
       }
     }
-  }, [prefillSetup, liveQuote.symbol]);
+  }, [prefillSetup, liveQuote?.symbol]);
 
   if (!isOpen) return null;
 
   // Safe lot calculation for $3,000 account based on stop loss distance
-  const currentOpenPrice = action === "BUY" ? liveQuote.ask : liveQuote.bid;
+  const currentOpenPrice = action === "BUY" ? (liveQuote?.ask || liveQuote?.bid || 4379.0) : (liveQuote?.bid || liveQuote?.ask || 4379.0);
   const slDistance = Math.abs(currentOpenPrice - stopLoss);
   const tpDistance = Math.abs(takeProfit - currentOpenPrice);
-  const riskDollar = (account.equity * account.auto_bot.risk_percent) / 100.0;
+  const currentEquity = typeof account?.equity === "number" && !isNaN(account.equity) ? account.equity : 3000.0;
+  const riskPct = typeof account?.auto_bot?.risk_percent === "number" ? account.auto_bot.risk_percent : 1.0;
+  const riskDollar = (currentEquity * riskPct) / 100.0;
   const potentialLoss = round2(lotSize * 100 * slDistance);
   const potentialGain = round2(lotSize * 100 * tpDistance);
   const rrRatio = slDistance > 0 ? (tpDistance / slDistance).toFixed(2) : "1.00";
@@ -121,8 +127,8 @@ export const InternalDemoTradingPanel: React.FC<InternalDemoTradingPanelProps> =
       setStatusMessage({ type: "success", text: res.message });
       const newPos = res.state.open_positions[0];
       sendTelegramNotification(
-        `⚡ <b>ApexFX Trade Executed</b>\n━━━━━━━━━━━━━━━━━━━━\n<b>Action:</b> ${action} ${lotSize} XAUUSD\n<b>Price:</b> $${currentOpenPrice.toFixed(2)}\n<b>Stop Loss:</b> $${stopLoss.toFixed(2)}\n<b>Take Profit:</b> $${takeProfit.toFixed(2)}\n<b>Ticket:</b> #${newPos ? newPos.ticket : ""}\n<i>ApexFX Virtual Broker • 1:1000 Leverage</i>`
-      );
+        `⚡ <b>ApexFX Trade Executed</b>\n━━━━━━━━━━━━━━━━━━━━\n<b>Action:</b> ${action} ${lotSize} XAUUSD\n<b>Price:</b> $${fmt2(currentOpenPrice)}\n<b>Stop Loss:</b> $${fmt2(stopLoss)}\n<b>Take Profit:</b> $${fmt2(takeProfit)}\n<b>Ticket:</b> #${newPos ? newPos.ticket : ""}\n<i>ApexFX Virtual Broker • 1:1000 Leverage</i>`
+      ).catch(() => {});
     } else {
       setStatusMessage({ type: "error", text: res.message });
     }
@@ -213,27 +219,34 @@ export const InternalDemoTradingPanel: React.FC<InternalDemoTradingPanelProps> =
       auto_bot: {
         ...account.auto_bot,
         enabled: nextEnabled,
-        logs: [newLog, ...account.auto_bot.logs].slice(0, 50),
+        logs: [newLog, ...(account.auto_bot?.logs || [])].slice(0, 50),
       },
     };
+    saveDemoAccount(nextState);
     onUpdateAccount(nextState);
+    setStatusMessage({
+      type: "success",
+      text: nextEnabled ? "4H PO3 Auto-Bot ACTIVATED! Scanning active market setups..." : "Auto-Bot paused.",
+    });
   };
 
   const handleSetRisk = (pct: number) => {
+    const eq = typeof account?.equity === "number" && !isNaN(account.equity) ? account.equity : 3000.0;
     const newLog: AutoBotLog = {
       id: `bot-risk-${Date.now()}`,
       timestamp: Date.now(),
       type: "info",
-      message: `Risk per trade adjusted to ${pct}% ($${((account.equity * pct) / 100).toFixed(2)}).`,
+      message: `Risk per trade adjusted to ${pct}% ($${((eq * pct) / 100).toFixed(2)}).`,
     };
     const nextState: DemoAccountState = {
       ...account,
       auto_bot: {
         ...account.auto_bot,
         risk_percent: pct,
-        logs: [newLog, ...account.auto_bot.logs].slice(0, 50),
+        logs: [newLog, ...(account.auto_bot?.logs || [])].slice(0, 50),
       },
     };
+    saveDemoAccount(nextState);
     onUpdateAccount(nextState);
   };
 
@@ -252,9 +265,10 @@ export const InternalDemoTradingPanel: React.FC<InternalDemoTradingPanelProps> =
       auto_bot: {
         ...account.auto_bot,
         market_mode: mode,
-        logs: [newLog, ...account.auto_bot.logs].slice(0, 50),
+        logs: [newLog, ...(account.auto_bot?.logs || [])].slice(0, 50),
       },
     };
+    saveDemoAccount(nextState);
     onUpdateAccount(nextState);
     setStatusMessage({
       type: "success",
@@ -427,10 +441,10 @@ export const InternalDemoTradingPanel: React.FC<InternalDemoTradingPanelProps> =
                 <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
               </div>
               <div className="text-sm font-mono font-bold text-white mt-1">
-                Bid: ${liveQuote.bid.toFixed(2)}
+                Bid: ${fmt2(liveQuote?.bid, "4379.00")}
               </div>
               <div className="text-xs font-mono text-terminal-muted">
-                Ask: ${liveQuote.ask.toFixed(2)} • Spr: {liveQuote.spread} pts
+                Ask: ${fmt2(liveQuote?.ask, "4379.38")} • Spr: {liveQuote?.spread ?? 3.8} pts
               </div>
             </div>
           </div>
@@ -577,14 +591,16 @@ export const InternalDemoTradingPanel: React.FC<InternalDemoTradingPanelProps> =
                   >
                     {isTestingTg ? "Pinging..." : "Test Ping"}
                   </button>
-                  <span>{account.auto_bot.logs.length} events</span>
+                  <span>{(account.auto_bot?.logs || []).length} events</span>
                 </div>
               </div>
               <div className="max-h-24 overflow-y-auto space-y-1 scrollbar-thin">
-                {account.auto_bot.logs.map((log) => (
+                {(account.auto_bot?.logs || []).map((log) => (
                   <div key={log.id} className="flex items-start gap-2 leading-tight">
                     <span className="text-gray-500 shrink-0">
-                      {new Date(log.timestamp).toLocaleTimeString()}
+                      {typeof log.timestamp === "number" && !isNaN(log.timestamp)
+                        ? new Date(log.timestamp).toLocaleTimeString()
+                        : "--:--:--"}
                     </span>
                     <span
                       className={`${
@@ -807,23 +823,23 @@ export const InternalDemoTradingPanel: React.FC<InternalDemoTradingPanelProps> =
                             </td>
                             <td className="px-3 py-2 text-white">{pos.volume}</td>
                             <td className="px-3 py-2 text-gray-300">
-                              ${pos.price_open.toFixed(2)}
+                              ${fmt2(pos.price_open)}
                             </td>
                             <td className="px-3 py-2 text-gray-200">
-                              ${pos.price_current.toFixed(2)}
+                              ${fmt2(pos.price_current)}
                             </td>
                             <td className="px-3 py-2 text-terminal-muted text-[11px]">
-                              <span>SL: ${pos.sl.toFixed(2)}</span>
+                              <span>SL: ${fmt2(pos.sl)}</span>
                               <br />
-                              <span>TP: ${pos.tp.toFixed(2)}</span>
+                              <span>TP: ${fmt2(pos.tp)}</span>
                             </td>
                             <td className="px-3 py-2 font-bold">
                               <span
                                 className={`${
-                                  pos.profit >= 0 ? "text-bull" : "text-bear"
+                                  (pos.profit || 0) >= 0 ? "text-bull" : "text-bear"
                                 }`}
                               >
-                                {pos.profit >= 0 ? "+" : ""}${pos.profit.toFixed(2)}
+                                {(pos.profit || 0) >= 0 ? "+" : ""}${fmt2(pos.profit)}
                               </span>
                               {pos.be_triggered && (
                                 <span className="ml-1 text-[9px] px-1 rounded bg-blue-500/20 text-blue-400">
@@ -892,7 +908,7 @@ export const InternalDemoTradingPanel: React.FC<InternalDemoTradingPanelProps> =
                             </td>
                             <td className="px-3 py-2 text-white">{t.volume}</td>
                             <td className="px-3 py-2 text-gray-300 text-[11px]">
-                              ${t.price_open.toFixed(2)} → ${t.price_close.toFixed(2)}
+                              ${fmt2(t.price_open)} → ${fmt2(t.price_close)}
                             </td>
                             <td className="px-3 py-2 text-gray-400 text-[11px]">
                               {t.close_reason}
@@ -900,10 +916,10 @@ export const InternalDemoTradingPanel: React.FC<InternalDemoTradingPanelProps> =
                             <td className="px-3 py-2 text-right font-bold">
                               <span
                                 className={`${
-                                  t.profit >= 0 ? "text-bull" : "text-bear"
+                                  (t.profit || 0) >= 0 ? "text-bull" : "text-bear"
                                 }`}
                               >
-                                {t.profit >= 0 ? "+" : ""}${t.profit.toFixed(2)}
+                                {(t.profit || 0) >= 0 ? "+" : ""}${fmt2(t.profit)}
                               </span>
                             </td>
                           </tr>
