@@ -77,8 +77,8 @@ export const InternalDemoTradingPanel: React.FC<InternalDemoTradingPanelProps> =
       if (prefillSetup.stopLoss) setStopLoss(round2(prefillSetup.stopLoss));
       if (prefillSetup.takeProfit1) setTakeProfit(round2(prefillSetup.takeProfit1));
     } else if (liveQuote) {
-      const ask = liveQuote.ask || 4379.38;
-      const bid = liveQuote.bid || 4379.00;
+      const ask = liveQuote.ask || 4364.18;
+      const bid = liveQuote.bid || 4363.80;
       if (action === "BUY") {
         setStopLoss(round2(ask - 15.0));
         setTakeProfit(round2(ask + 30.0));
@@ -92,7 +92,7 @@ export const InternalDemoTradingPanel: React.FC<InternalDemoTradingPanelProps> =
   if (!isOpen) return null;
 
   // Safe lot calculation for $3,000 account based on stop loss distance
-  const currentOpenPrice = action === "BUY" ? (liveQuote?.ask || liveQuote?.bid || 4379.0) : (liveQuote?.bid || liveQuote?.ask || 4379.0);
+  const currentOpenPrice = action === "BUY" ? (liveQuote?.ask || liveQuote?.bid || 4363.80) : (liveQuote?.bid || liveQuote?.ask || 4363.80);
   const slDistance = Math.abs(currentOpenPrice - stopLoss);
   const tpDistance = Math.abs(takeProfit - currentOpenPrice);
   const currentEquity = typeof account?.equity === "number" && !isNaN(account.equity) ? account.equity : 3000.0;
@@ -441,10 +441,10 @@ export const InternalDemoTradingPanel: React.FC<InternalDemoTradingPanelProps> =
                 <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
               </div>
               <div className="text-sm font-mono font-bold text-white mt-1">
-                Bid: ${fmt2(liveQuote?.bid, "4379.00")}
+                Bid: ${fmt2(liveQuote?.bid, "4363.80")}
               </div>
               <div className="text-xs font-mono text-terminal-muted">
-                Ask: ${fmt2(liveQuote?.ask, "4379.38")} • Spr: {liveQuote?.spread ?? 3.8} pts
+                Ask: ${fmt2(liveQuote?.ask, "4364.18")} • Spr: {liveQuote?.spread ?? 3.8} pts
               </div>
             </div>
           </div>

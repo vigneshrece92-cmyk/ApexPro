@@ -128,7 +128,7 @@ export default function TerminalDashboard() {
     }
 
     fetchAlerts();
-    const interval = setInterval(fetchAlerts, 30000);
+    const interval = setInterval(fetchAlerts, 15000);
     return () => clearInterval(interval);
   }, []);
 

@@ -162,10 +162,10 @@ export function loadDemoAccount(): DemoAccountState {
             symbol: (p.symbol as AssetSymbol) || "XAUUSD",
             type: p.type === "SELL" ? "SELL" : "BUY",
             volume: typeof p.volume === "number" && !isNaN(p.volume) ? p.volume : 0.02,
-            price_open: typeof p.price_open === "number" && !isNaN(p.price_open) ? p.price_open : 4379.0,
-            sl: typeof p.sl === "number" && !isNaN(p.sl) ? p.sl : 4360.0,
-            tp: typeof p.tp === "number" && !isNaN(p.tp) ? p.tp : 4400.0,
-            price_current: typeof p.price_current === "number" && !isNaN(p.price_current) ? p.price_current : (p.price_open || 4379.0),
+            price_open: typeof p.price_open === "number" && !isNaN(p.price_open) ? p.price_open : 4363.80,
+            sl: typeof p.sl === "number" && !isNaN(p.sl) ? p.sl : 4350.0,
+            tp: typeof p.tp === "number" && !isNaN(p.tp) ? p.tp : 4385.0,
+            price_current: typeof p.price_current === "number" && !isNaN(p.price_current) ? p.price_current : (p.price_open || 4363.80),
             profit: typeof p.profit === "number" && !isNaN(p.profit) ? p.profit : 0,
             comment: typeof p.comment === "string" ? p.comment : "ApexFX 4H PO3",
             time: typeof p.time === "number" ? p.time : Date.now(),
@@ -181,8 +181,8 @@ export function loadDemoAccount(): DemoAccountState {
             symbol: (h.symbol as AssetSymbol) || "XAUUSD",
             type: h.type === "SELL" ? "SELL" : "BUY",
             volume: typeof h.volume === "number" && !isNaN(h.volume) ? h.volume : 0.02,
-            price_open: typeof h.price_open === "number" && !isNaN(h.price_open) ? h.price_open : 4379.0,
-            price_close: typeof h.price_close === "number" && !isNaN(h.price_close) ? h.price_close : 4380.0,
+            price_open: typeof h.price_open === "number" && !isNaN(h.price_open) ? h.price_open : 4363.80,
+            price_close: typeof h.price_close === "number" && !isNaN(h.price_close) ? h.price_close : 4365.0,
             sl: typeof h.sl === "number" && !isNaN(h.sl) ? h.sl : 4360.0,
             tp: typeof h.tp === "number" && !isNaN(h.tp) ? h.tp : 4400.0,
             profit: typeof h.profit === "number" && !isNaN(h.profit) ? h.profit : 0,
@@ -321,7 +321,7 @@ export function executeDemoTrade(
 
   // Enforce safe lot bounds for $3,000 account
   const safeVolume = Math.max(0.01, Math.min(0.05, Math.round((volume || 0.02) * 100) / 100));
-  const openPrice = type === "BUY" ? (quote.ask || quote.bid || 4379.0) : (quote.bid || quote.ask || 4379.0);
+  const openPrice = type === "BUY" ? (quote.ask || quote.bid || 4363.80) : (quote.bid || quote.ask || 4363.80);
   const safeSL = typeof sl === "number" && !isNaN(sl) ? Math.round(sl * 100) / 100 : (type === "BUY" ? openPrice - 15.0 : openPrice + 15.0);
   const safeTP = typeof tp === "number" && !isNaN(tp) ? Math.round(tp * 100) / 100 : (type === "BUY" ? openPrice + 30.0 : openPrice - 30.0);
 

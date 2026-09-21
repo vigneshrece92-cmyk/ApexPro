@@ -150,7 +150,7 @@ export const AIChartAnalyzer: React.FC<AIChartAnalyzerProps> = ({
     // Draw sample candlesticks
     // Draw sample chart with authentic price levels
     const assetName = type === "gold" ? "XAU/USD H1" : type === "silver" ? "XAG/USD H4" : "EUR/USD 15M";
-    const currentPriceText = type === "gold" ? "4,361.56" : type === "silver" ? "67.15" : "1.1490";
+    const currentPriceText = type === "gold" ? "4,363.80" : type === "silver" ? "66.85" : "1.1480";
 
     ctx.fillStyle = "#FFFFFF";
     ctx.font = "bold 14px monospace";

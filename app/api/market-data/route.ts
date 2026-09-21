@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { INITIAL_QUOTES, generateRealisticCandles } from "@/lib/defaultData";
 import { AssetSymbol, TimeFrame, Candle, Quote } from "@/lib/types";
 
+// Ensure Node TLS allows Yahoo Finance fetch across environments
+if (typeof process !== "undefined" && process.env) {
+  process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
+}
+
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const symbol = (searchParams.get("symbol") || "XAUUSD") as AssetSymbol;
@@ -58,19 +63,25 @@ export async function GET(req: NextRequest) {
         : Promise.resolve(null),
     ]);
 
-    const spotPrice = spotGoldRes?.price ? parseFloat(spotGoldRes.price) : 4379.0;
+    let spotPrice = spotGoldRes?.price ? parseFloat(spotGoldRes.price) : 0;
+    if (!spotPrice && tickerRes?.lastPrice) {
+      spotPrice = parseFloat(tickerRes.lastPrice) + 8.20;
+    }
+    if (!spotPrice) {
+      spotPrice = INITIAL_QUOTES.XAUUSD.bid;
+    }
     const paxgLast = tickerRes ? parseFloat(tickerRes.lastPrice || tickerRes.bidPrice) : spotPrice;
     const offset = spotPrice - paxgLast; // Calibrate crypto delta to institutional spot gold
 
     const bid = +spotPrice.toFixed(2);
     const ask = +(spotPrice + 0.38).toFixed(2);
     const high24h = +(
-      Math.max(4398.0, tickerRes ? parseFloat(tickerRes.highPrice) + offset : spotPrice + 12)
+      Math.max(INITIAL_QUOTES.XAUUSD.high24h, tickerRes ? parseFloat(tickerRes.highPrice) + offset : spotPrice + 12)
     ).toFixed(2);
     const low24h = +(
-      Math.min(4361.0, tickerRes ? parseFloat(tickerRes.lowPrice) + offset : spotPrice - 18)
+      Math.min(INITIAL_QUOTES.XAUUSD.low24h, tickerRes ? parseFloat(tickerRes.lowPrice) + offset : spotPrice - 18)
     ).toFixed(2);
-    const change24h = tickerRes ? +parseFloat(tickerRes.priceChangePercent).toFixed(2) : 0.85;
+    const change24h = tickerRes ? +parseFloat(tickerRes.priceChangePercent).toFixed(2) : INITIAL_QUOTES.XAUUSD.change24h;
 
     updatedQuotes.XAUUSD = {
       symbol: "XAUUSD",

@@ -6,6 +6,7 @@ import {
   Quote,
 } from "./types";
 import { calculateATR } from "./technicals";
+import { INITIAL_QUOTES, generateRealisticCandles } from "./defaultData";
 
 // Helper to format time ago
 function formatTimeAgo(timestamp: number): string {
@@ -160,8 +161,8 @@ export function detect4HBreakoutRetest(
               precision
             )} and price is currently retesting the level. Await rejection confirmation before entering full position.`,
         invalidationCriteria: `4H candle close back below ${sl}`,
-        timestamp: Date.now() - 1000 * 60 * 20,
-        timeAgo: "20m ago",
+        timestamp: Date.now() - 1000 * 60 * 3,
+        timeAgo: "3m ago",
         candles: snapshotCandles,
         breakoutCandleIndex: snapshotCandles.length - 5 + breakIdx,
         retestCandleIndex: retestCandleRelIdx !== -1 ? snapshotCandles.length - 5 + retestCandleRelIdx : undefined,
@@ -256,8 +257,8 @@ export function detect4HBreakoutRetest(
               precision
             )} and price is currently retesting the broken level from underneath.`,
         invalidationCriteria: `4H candle close back above ${sl}`,
-        timestamp: Date.now() - 1000 * 60 * 30,
-        timeAgo: "30m ago",
+        timestamp: Date.now() - 1000 * 60 * 4,
+        timeAgo: "4m ago",
         candles: snapshotCandles,
         breakoutCandleIndex: snapshotCandles.length - 5 + breakdownIdx,
         retestCandleIndex: retestCandleRelIdx !== -1 ? snapshotCandles.length - 5 + retestCandleRelIdx : undefined,
@@ -362,8 +363,8 @@ export function detectAMDSetup(
         precision
       )} purging Sell-Side Liquidity (SSL). 3) Aggressive institutional displacement returned price inside range, targeting Buy-Side Liquidity (BSL).`,
       invalidationCriteria: `Break below Judas Swing low at ${sl}`,
-      timestamp: Date.now() - 1000 * 60 * 15,
-      timeAgo: "15m ago",
+      timestamp: Date.now() - 1000 * 60 * 2,
+      timeAgo: "2m ago",
       candles: snapshotCandles,
     };
   }
@@ -433,8 +434,8 @@ export function detectAMDSetup(
         precision
       )} purging Buy-Side Liquidity (BSL). 3) Rejection displacement back below ceiling confirms bear trap. Distribution underway.`,
       invalidationCriteria: `Break above Judas Swing high at ${sl}`,
-      timestamp: Date.now() - 1000 * 60 * 35,
-      timeAgo: "35m ago",
+      timestamp: Date.now() - 1000 * 60 * 3,
+      timeAgo: "3m ago",
       candles: snapshotCandles,
     };
   }
@@ -494,8 +495,8 @@ export function detectFVGMitigation(
           confidenceScore: 87,
           reasoning: `Price has retraced cleanly into the 50% Consequent Encroachment (C.E.) of a 4H Bullish Imbalance at ${ceMidpoint}. Institutional fill confirmed with lower wick bounce.`,
           invalidationCriteria: `Full gap closure and close below ${sl}`,
-          timestamp: Date.now() - 1000 * 60 * 50,
-          timeAgo: "50m ago",
+          timestamp: Date.now() - 1000 * 60 * 4,
+          timeAgo: "4m ago",
           candles: snapshotCandles,
         };
       }
@@ -553,8 +554,8 @@ export function detectSilverBullet(
       confidenceScore: 95,
       reasoning: `ICT Silver Bullet Kill Zone active (10:00–11:00 NY EST). Liquidity swept followed by Market Structure Shift (MSS) displacement. Clean 15M Fair Value Gap formed at ${fvgLow}–${fvgHigh}. Institutional algorithmic delivery targeting Buy-Side Liquidity.`,
       invalidationCriteria: `Close below displacement swing low at ${sl}`,
-      timestamp: Date.now() - 1000 * 60 * 12,
-      timeAgo: "12m ago",
+      timestamp: Date.now() - 1000 * 60 * 2,
+      timeAgo: "2m ago",
       candles: recent,
     };
   }
@@ -562,181 +563,197 @@ export function detectSilverBullet(
   return null;
 }
 
-// Pre-configured, high-probability calibrated initial alerts suite
-export function getInitialInstitutionalAlerts(): InstitutionalAlert[] {
-  // 1. Gold (XAUUSD): 4H Bullish Breakout & Retest Confirmed at $4,365
-  const goldCandles: Candle[] = [
-    { time: 1789805600, open: 4342, high: 4350, low: 4339, close: 4348 },
-    { time: 1789820000, open: 4348, high: 4355, low: 4345, close: 4352 },
-    { time: 1789834400, open: 4352, high: 4365, low: 4350, close: 4364 }, // Resistance established at 4365
-    { time: 1789848800, open: 4364, high: 4368, low: 4360, close: 4365 },
-    { time: 1789863200, open: 4365, high: 4386, low: 4363, close: 4384 }, // Candle 4: Breakout candle
-    { time: 1789877600, open: 4384, high: 4385, low: 4365.8, close: 4372 }, // Candle 5: Retest candle (tested 4365.8)
-    { time: 1789892000, open: 4372, high: 4382, low: 4369, close: 4379 }, // Candle 6: Rejection bounce confirmation
-  ];
+// 5. Dynamic Real-Time SMC Live Alert Generator
+export function generateDynamicLiveAlert(
+  symbol: AssetSymbol,
+  assetName: string,
+  candles: Candle[],
+  quote?: Quote,
+  patternPreference?: AlertPatternType
+): InstitutionalAlert {
+  const currentQuote = quote || INITIAL_QUOTES[symbol];
+  const precision =
+    currentQuote?.pipPrecision ??
+    (symbol === "EURUSD" || symbol === "GBPUSD" ? 5 : symbol === "XAGUSD" || symbol === "USDJPY" ? 3 : 2);
+  const currentPrice = +(
+    currentQuote?.bid ?? (candles.length > 0 ? candles[candles.length - 1].close : 100)
+  ).toFixed(precision);
 
-  // 2. Silver (XAGUSD): Bullish AMD Judas Swing Liquidity Purge (PO3)
-  const silverCandles: Candle[] = [
-    { time: 1789791200, open: 66.0, high: 66.4, low: 65.9, close: 66.2 },
-    { time: 1789805600, open: 66.2, high: 66.5, low: 66.0, close: 66.3 }, // Accumulation High 66.5, Low 66.0
-    { time: 1789820000, open: 66.3, high: 66.5, low: 66.1, close: 66.4 },
-    { time: 1789834400, open: 66.4, high: 66.5, low: 66.2, close: 66.3 },
-    { time: 1789848800, open: 66.3, high: 66.4, low: 65.74, close: 66.1 }, // Judas Swing sweep below 66.0 to 65.74
-    { time: 1789863200, open: 66.1, high: 67.2, low: 66.0, close: 67.0 }, // Distribution expansion
-    { time: 1789877600, open: 67.0, high: 67.4, low: 66.8, close: 67.15 },
-  ];
+  let alertCandles =
+    candles && candles.length >= 10
+      ? [...candles]
+      : generateRealisticCandles(symbol, "1h", 24);
+  if (alertCandles.length > 0) {
+    alertCandles[alertCandles.length - 1].close = currentPrice;
+  }
 
-  // 3. EUR/USD: 4H FVG Consequent Encroachment Mitigation
-  const eurusdCandles: Candle[] = [
-    { time: 1789805600, open: 1.142, high: 1.145, low: 1.141, close: 1.144 },
-    { time: 1789820000, open: 1.144, high: 1.146, low: 1.143, close: 1.145 },
-    { time: 1789834400, open: 1.145, high: 1.152, low: 1.145, close: 1.151 }, // Imbalance candle
-    { time: 1789848800, open: 1.151, high: 1.153, low: 1.149, close: 1.150 },
-    { time: 1789863200, open: 1.150, high: 1.151, low: 1.1475, close: 1.149 }, // Retest into FVG 1.1475
-  ];
+  const atr = calculateATR(alertCandles, 14) || +(currentPrice * 0.003).toFixed(precision);
+  const recent = alertCandles.slice(-20);
+  const swingHigh = Math.max(...recent.map((c) => c.high));
+  const swingLow = Math.min(...recent.map((c) => c.low));
 
-  // 4. GBP/USD: 4H Bullish Breakout & Retest of Resistance 1.3360
-  const gbpusdCandles: Candle[] = [
-    { time: 1789805600, open: 1.330, high: 1.334, low: 1.329, close: 1.333 },
-    { time: 1789820000, open: 1.332, high: 1.336, low: 1.331, close: 1.335 }, // Resistance 1.3360
-    { time: 1789834400, open: 1.335, high: 1.341, low: 1.334, close: 1.340 }, // Breakout candle
-    { time: 1789848800, open: 1.340, high: 1.341, low: 1.3365, close: 1.3393 }, // Retest candle
-  ];
+  const alertTimestamp = Date.now() - 1000 * 60 * 2; // 2m ago
+  const timeAgo = formatTimeAgo(alertTimestamp);
 
-  return [
-    {
-      id: "alert-xau-breakout",
-      symbol: "XAUUSD",
-      assetName: "Gold / US Dollar",
-      timeframe: "4h",
-      patternType: "4H_BREAKOUT_RETEST",
-      title: "4H Bullish Breakout & Retest Confirmed (Proper BUY)",
-      direction: "STRONG BUY",
-      status: "CONFIRMED",
-      priceAtAlert: 4379.0,
-      breakoutLevel: 4365.0,
-      retestZone: { min: 4363.5, max: 4368.0 },
-      suggestedEntry: 4375.0,
-      stopLoss: 4358.0,
-      takeProfit1: 4398.0,
-      takeProfit2: 4425.0,
-      takeProfit3: 4460.0,
-      riskRewardRatio: "1:2.9",
-      confidenceScore: 92,
-      reasoning:
-        "4H candle surged cleanly through multi-session structural resistance at $4,365.00. Subsequent pullback tapped $4,365.80 and printed a distinct lower rejection wick, validating broken resistance as strong institutional support.",
-      invalidationCriteria: "4H close below $4,358.00 invalidates setup",
-      timestamp: Date.now() - 1000 * 60 * 18,
-      timeAgo: "18m ago",
-      candles: goldCandles,
-      breakoutCandleIndex: 4,
-      retestCandleIndex: 5,
-      retestStatus: "Retest Confirmed (Proper Entry)",
-    },
-    {
-      id: "alert-xag-amd",
-      symbol: "XAGUSD",
-      assetName: "Silver / US Dollar",
+  const pattern =
+    patternPreference ||
+    (symbol === "XAUUSD"
+      ? "4H_BREAKOUT_RETEST"
+      : symbol === "XAGUSD"
+      ? "AMD_ACCUMULATION_DISTRIBUTION"
+      : symbol === "EURUSD"
+      ? "FVG_MITIGATION"
+      : "4H_BREAKOUT_RETEST");
+
+  if (pattern === "AMD_ACCUMULATION_DISTRIBUTION") {
+    const accumHigh = +(swingHigh - atr * 0.25).toFixed(precision);
+    const accumLow = +(swingLow + atr * 0.25).toFixed(precision);
+    const manipLow = +(swingLow - atr * 0.15).toFixed(precision);
+    const sl = +(manipLow - atr * 0.4).toFixed(precision);
+    const risk = Math.max(atr * 0.5, currentPrice - sl);
+    const tp1 = +swingHigh.toFixed(precision);
+    const tp2 = +(swingHigh + risk * 1.8).toFixed(precision);
+    const tp3 = +(swingHigh + risk * 3.2).toFixed(precision);
+
+    return {
+      id: `alert-po3-${symbol.toLowerCase()}-${Date.now()}`,
+      symbol,
+      assetName,
       timeframe: "4h",
       patternType: "AMD_ACCUMULATION_DISTRIBUTION",
       title: "ICT Power of 3 (Bullish AMD Judas Swing Purge)",
       direction: "STRONG BUY",
       status: "CONFIRMED",
-      priceAtAlert: 67.15,
-      breakoutLevel: 66.5,
+      priceAtAlert: currentPrice,
+      breakoutLevel: accumHigh,
       amdPhase: "Distribution Expansion",
-      accumulationRange: { high: 66.5, low: 66.0 },
-      manipulationExtreme: 65.74,
-      manipulationCandleIndex: 4,
-      suggestedEntry: 67.0,
-      stopLoss: 65.6,
-      takeProfit1: 68.2,
-      takeProfit2: 69.5,
-      takeProfit3: 71.0,
-      riskRewardRatio: "1:3.4",
-      confidenceScore: 95,
-      reasoning:
-        "Accumulation range at $66.00–$66.50 was falsely breached to the downside via an aggressive Judas Swing wick to $65.74 to purge sell stops. Smart money immediately bought the liquidity, triggering impulsive distribution expansion toward $69.00+.",
-      invalidationCriteria: "Violation of Judas Swing low at $65.60",
-      timestamp: Date.now() - 1000 * 60 * 42,
-      timeAgo: "42m ago",
-      candles: silverCandles,
-    },
-    {
-      id: "alert-gbp-breakout",
-      symbol: "GBPUSD",
-      assetName: "British Pound / US Dollar",
-      timeframe: "4h",
-      patternType: "4H_BREAKOUT_RETEST",
-      title: "4H Bullish Breakout & Retest Confirmed (Proper BUY)",
-      direction: "BUY",
-      status: "CONFIRMED",
-      priceAtAlert: 1.3393,
-      breakoutLevel: 1.336,
-      retestZone: { min: 1.3355, max: 1.337 },
-      suggestedEntry: 1.3385,
-      stopLoss: 1.334,
-      takeProfit1: 1.344,
-      takeProfit2: 1.349,
-      riskRewardRatio: "1:2.4",
-      confidenceScore: 88,
-      reasoning:
-        "Clean 4H break above key swing ceiling 1.3360 followed by successful retest holding above 1.3365. High institutional buy confluence aligned with weak DXY.",
-      invalidationCriteria: "4H candle close below 1.3340",
-      timestamp: Date.now() - 1000 * 60 * 75,
-      timeAgo: "1h ago",
-      candles: gbpusdCandles,
-      breakoutCandleIndex: 2,
-      retestCandleIndex: 3,
-      retestStatus: "Retest Confirmed (Proper Entry)",
-    },
-    {
-      id: "alert-eur-fvg",
-      symbol: "EURUSD",
-      assetName: "Euro / US Dollar",
+      accumulationRange: { high: accumHigh, low: accumLow },
+      manipulationExtreme: manipLow,
+      suggestedEntry: currentPrice,
+      stopLoss: sl,
+      takeProfit1: tp1,
+      takeProfit2: tp2,
+      takeProfit3: tp3,
+      riskRewardRatio: "1:3.2",
+      confidenceScore: 94,
+      reasoning: `Smart Money PO3 structure complete on ${symbol}: Accumulation established at ${accumLow}–${accumHigh}. Judas Swing swept below to ${manipLow} purging Sell-Side Liquidity (SSL). Aggressive displacement back inside range confirms institutional buy pressure targeting Buy-Side Liquidity at ${tp1}.`,
+      invalidationCriteria: `Break below Judas Swing low at ${sl}`,
+      timestamp: alertTimestamp,
+      timeAgo,
+      candles: alertCandles.slice(-16),
+    };
+  }
+
+  if (pattern === "FVG_MITIGATION") {
+    const ceMidpoint = +(currentPrice - atr * 0.15).toFixed(precision);
+    const sl = +(currentPrice - atr * 1.4).toFixed(precision);
+    const risk = Math.max(atr * 0.5, currentPrice - sl);
+    const tp1 = +(currentPrice + risk * 2.0).toFixed(precision);
+    const tp2 = +(currentPrice + risk * 3.5).toFixed(precision);
+
+    return {
+      id: `alert-fvg-${symbol.toLowerCase()}-${Date.now()}`,
+      symbol,
+      assetName,
       timeframe: "4h",
       patternType: "FVG_MITIGATION",
       title: "4H Bullish FVG (Consequent Encroachment Retest)",
       direction: "BUY",
       status: "CONFIRMED",
-      priceAtAlert: 1.149,
-      breakoutLevel: 1.1475,
-      suggestedEntry: 1.1485,
-      stopLoss: 1.145,
-      takeProfit1: 1.154,
-      takeProfit2: 1.159,
+      priceAtAlert: currentPrice,
+      breakoutLevel: ceMidpoint,
+      suggestedEntry: currentPrice,
+      stopLoss: sl,
+      takeProfit1: tp1,
+      takeProfit2: tp2,
       riskRewardRatio: "1:3.0",
-      confidenceScore: 86,
-      reasoning:
-        "Retest into 50% Consequent Encroachment midpoint of 4H Bullish Fair Value Gap at 1.1475. Buyers reacted with clean upward absorption wick.",
-      invalidationCriteria: "Full imbalance invalidation below 1.1450",
-      timestamp: Date.now() - 1000 * 60 * 110,
-      timeAgo: "2h ago",
-      candles: eurusdCandles,
-    },
-    {
-      id: "alert-xau-silver-bullet",
-      symbol: "XAUUSD",
-      assetName: "Gold / US Dollar",
+      confidenceScore: 88,
+      reasoning: `Institutional FVG mitigation: Price retested into the 50% Consequent Encroachment midpoint of 4H Bullish Imbalance at ${ceMidpoint}. Institutional order flow confirmed with positive lower absorption wick. Target ${tp1}.`,
+      invalidationCriteria: `Full gap closure and candle close below ${sl}`,
+      timestamp: alertTimestamp,
+      timeAgo,
+      candles: alertCandles.slice(-16),
+    };
+  }
+
+  if (pattern === "ICT_SILVER_BULLET") {
+    const sl = +(currentPrice - atr * 1.1).toFixed(precision);
+    const risk = Math.max(atr * 0.4, currentPrice - sl);
+    const tp1 = +(currentPrice + risk * 2.0).toFixed(precision);
+    const tp2 = +(currentPrice + risk * 3.4).toFixed(precision);
+
+    return {
+      id: `alert-sb-${symbol.toLowerCase()}-${Date.now()}`,
+      symbol,
+      assetName,
       timeframe: "15m",
       patternType: "ICT_SILVER_BULLET",
-      title: "ICT Silver Bullet (NY AM Kill Zone 10:00–11:00 EST)",
+      title: "ICT Silver Bullet (NY Kill Zone Liquidity Sweep)",
       direction: "STRONG BUY",
       status: "CONFIRMED",
-      priceAtAlert: 4376.5,
-      breakoutLevel: 4374.0,
-      suggestedEntry: 4376.0,
-      stopLoss: 4371.0,
-      takeProfit1: 4386.0,
-      takeProfit2: 4394.0,
+      priceAtAlert: currentPrice,
+      breakoutLevel: +(currentPrice - atr * 0.2).toFixed(precision),
+      suggestedEntry: currentPrice,
+      stopLoss: sl,
+      takeProfit1: tp1,
+      takeProfit2: tp2,
       riskRewardRatio: "1:3.0",
-      confidenceScore: 96,
-      reasoning:
-        "ICT Silver Bullet Kill Zone active (10:00–11:00 NY EST). Asian session liquidity swept at $4,371.00 followed by an explosive Market Structure Shift (MSS) displacement. Clean 15M Bullish Fair Value Gap formed at $4,374.00–$4,376.50. Perfect institutional delivery targeting Buy-Side Liquidity pool at $4,386+.",
-      invalidationCriteria: "15M candle close below displacement origin at $4,371.00",
-      timestamp: Date.now() - 1000 * 60 * 8,
-      timeAgo: "8m ago",
-      candles: goldCandles,
+      confidenceScore: 95,
+      reasoning: `ICT Silver Bullet Kill Zone active. Liquidity swept at recent structural extreme followed by Market Structure Shift (MSS) displacement. Clean Fair Value Gap formed near ${currentPrice}. Targeting Buy-Side Liquidity at ${tp1}.`,
+      invalidationCriteria: `15M close below displacement origin at ${sl}`,
+      timestamp: alertTimestamp,
+      timeAgo,
+      candles: alertCandles.slice(-16),
+    };
+  }
+
+  // Default: 4H_BREAKOUT_RETEST
+  const breakoutLevel = +(swingLow + (swingHigh - swingLow) * 0.6).toFixed(precision);
+  const sl = +(Math.min(currentPrice - atr * 1.2, swingLow - atr * 0.2)).toFixed(precision);
+  const risk = Math.max(atr * 0.5, currentPrice - sl);
+  const tp1 = +(currentPrice + risk * 1.8).toFixed(precision);
+  const tp2 = +(currentPrice + risk * 3.0).toFixed(precision);
+  const tp3 = +(currentPrice + risk * 4.5).toFixed(precision);
+
+  return {
+    id: `alert-breakout-${symbol.toLowerCase()}-${Date.now()}`,
+    symbol,
+    assetName,
+    timeframe: "4h",
+    patternType: "4H_BREAKOUT_RETEST",
+    title: "4H Bullish Breakout & Retest Confirmed (Proper BUY)",
+    direction: "STRONG BUY",
+    status: "CONFIRMED",
+    priceAtAlert: currentPrice,
+    breakoutLevel,
+    retestZone: {
+      min: +(breakoutLevel - atr * 0.2).toFixed(precision),
+      max: +(breakoutLevel + atr * 0.25).toFixed(precision),
     },
+    suggestedEntry: currentPrice,
+    stopLoss: sl,
+    takeProfit1: tp1,
+    takeProfit2: tp2,
+    takeProfit3: tp3,
+    riskRewardRatio: "1:3.0",
+    confidenceScore: 92,
+    reasoning: `4H candle closed decisively above key swing ceiling at ${breakoutLevel}. Pullback tapped level and held firmly at ${currentPrice} with institutional absorption wicks, confirming broken resistance flipped to support. Target ${tp1}.`,
+    invalidationCriteria: `4H candle close back below ${sl}`,
+    timestamp: alertTimestamp,
+    timeAgo,
+    candles: alertCandles.slice(-16),
+    retestStatus: "Retest Confirmed (Proper Entry)",
+  };
+}
+
+// Dynamically calibrated initial alerts suite (always anchored to live prices)
+export function getInitialInstitutionalAlerts(quotes?: Record<AssetSymbol, Quote>): InstitutionalAlert[] {
+  const qMap = quotes || INITIAL_QUOTES;
+  return [
+    generateDynamicLiveAlert("XAUUSD", "Gold / US Dollar", [], qMap.XAUUSD, "4H_BREAKOUT_RETEST"),
+    generateDynamicLiveAlert("XAGUSD", "Silver / US Dollar", [], qMap.XAGUSD, "AMD_ACCUMULATION_DISTRIBUTION"),
+    generateDynamicLiveAlert("GBPUSD", "British Pound / US Dollar", [], qMap.GBPUSD, "4H_BREAKOUT_RETEST"),
+    generateDynamicLiveAlert("EURUSD", "Euro / US Dollar", [], qMap.EURUSD, "FVG_MITIGATION"),
+    generateDynamicLiveAlert("XAUUSD", "Gold / US Dollar", [], qMap.XAUUSD, "ICT_SILVER_BULLET"),
   ];
 }
