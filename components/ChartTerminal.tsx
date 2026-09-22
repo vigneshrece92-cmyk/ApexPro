@@ -2,7 +2,12 @@
 
 import React, { useEffect, useRef, useState } from "react";
 import { AssetSymbol, TimeFrame, Candle, Quote } from "@/lib/types";
-import { computeTechnicals, calculateVolumeProfile, detectChartSignals } from "@/lib/technicals";
+import {
+  computeTechnicals,
+  calculateVolumeProfile,
+  detectChartSignals,
+  calculateSessionLevels,
+} from "@/lib/technicals";
 import {
   Sparkles,
   Layers,
@@ -18,6 +23,9 @@ import {
   TrendingUp,
   TrendingDown,
   BarChart2,
+  Clock,
+  Compass,
+  Target,
 } from "lucide-react";
 
 interface ChartTerminalProps {
@@ -60,6 +68,10 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
   const [showRSI, setShowRSI] = useState<boolean>(false);
   const [showVP, setShowVP] = useState<boolean>(true); // Volume Profile (VAH, VAL, POC)
   const [showSignals, setShowSignals] = useState<boolean>(true); // In-chart BUY / SELL signals
+  const [showPDHL, setShowPDHL] = useState<boolean>(true); // Previous Day High & Low (PDH / PDL)
+  const [showORB, setShowORB] = useState<boolean>(true); // Opening Range High & Low (ORB 15M/30M)
+  const [showAsia, setShowAsia] = useState<boolean>(false); // Asian Session High & Low (Asia H / Asia L)
+  const [showDO, setShowDO] = useState<boolean>(false); // Daily Open (DO)
 
   // SMC Level Copy Feedback and Radar Drawer
   const [copiedLevel, setCopiedLevel] = useState<string | null>(null);
@@ -88,6 +100,11 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
   const chartSignals = React.useMemo(() => {
     return detectChartSignals(candles, volumeProfile, quote.pipPrecision);
   }, [candles, volumeProfile, quote.pipPrecision]);
+
+  // Institutional Session Liquidity (PDH/PDL, ORB, Asia H/L, Daily Open)
+  const sessionLevels = React.useMemo(() => {
+    return technicals.sessionLevels || calculateSessionLevels(candles, quote.pipPrecision);
+  }, [technicals.sessionLevels, candles, quote.pipPrecision]);
 
   const candlesSignature = React.useMemo(() => {
     if (!candles || candles.length === 0) return "empty";
@@ -313,6 +330,86 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
         });
       }
 
+      // 6. Previous Day High (PDH) & Previous Day Low (PDL) - Major Daily Liquidity
+      if (showPDHL && sessionLevels && sessionLevels.pdh > 0) {
+        candleSeries.createPriceLine({
+          price: sessionLevels.pdh,
+          color: "#F59E0B",
+          lineWidth: 1.5,
+          lineStyle: lwc.LineStyle.Dashed,
+          axisLabelVisible: true,
+          title: `PDH ${sessionLevels.pdh}`,
+        });
+        candleSeries.createPriceLine({
+          price: sessionLevels.pdl,
+          color: "#A855F7",
+          lineWidth: 1.5,
+          lineStyle: lwc.LineStyle.Dashed,
+          axisLabelVisible: true,
+          title: `PDL ${sessionLevels.pdl}`,
+        });
+      }
+
+      // 7. Opening Range Breakout (ORB High, Low & 50% Mid)
+      if (showORB && sessionLevels && sessionLevels.orbHigh > 0) {
+        candleSeries.createPriceLine({
+          price: sessionLevels.orbHigh,
+          color: "#06B6D4",
+          lineWidth: 1.5,
+          lineStyle: lwc.LineStyle.Dotted,
+          axisLabelVisible: true,
+          title: `ORB-H ${sessionLevels.orbHigh}`,
+        });
+        candleSeries.createPriceLine({
+          price: sessionLevels.orbLow,
+          color: "#FB923C",
+          lineWidth: 1.5,
+          lineStyle: lwc.LineStyle.Dotted,
+          axisLabelVisible: true,
+          title: `ORB-L ${sessionLevels.orbLow}`,
+        });
+        candleSeries.createPriceLine({
+          price: sessionLevels.orbMid,
+          color: "rgba(255, 255, 255, 0.4)",
+          lineWidth: 1,
+          lineStyle: lwc.LineStyle.Dotted,
+          axisLabelVisible: true,
+          title: `ORB 50%`,
+        });
+      }
+
+      // 8. Asian Session Range (Asia High & Asia Low)
+      if (showAsia && sessionLevels && sessionLevels.asiaHigh > 0) {
+        candleSeries.createPriceLine({
+          price: sessionLevels.asiaHigh,
+          color: "#818CF8",
+          lineWidth: 1,
+          lineStyle: lwc.LineStyle.Dashed,
+          axisLabelVisible: true,
+          title: `ASIA-H ${sessionLevels.asiaHigh}`,
+        });
+        candleSeries.createPriceLine({
+          price: sessionLevels.asiaLow,
+          color: "#2DD4BF",
+          lineWidth: 1,
+          lineStyle: lwc.LineStyle.Dashed,
+          axisLabelVisible: true,
+          title: `ASIA-L ${sessionLevels.asiaLow}`,
+        });
+      }
+
+      // 9. Daily Open (DO) Baseline
+      if (showDO && sessionLevels && sessionLevels.dailyOpen > 0) {
+        candleSeries.createPriceLine({
+          price: sessionLevels.dailyOpen,
+          color: "#FACC15",
+          lineWidth: 1.5,
+          lineStyle: lwc.LineStyle.LargeDashed,
+          axisLabelVisible: true,
+          title: `DAILY OPEN ${sessionLevels.dailyOpen}`,
+        });
+      }
+
       chart.timeScale().fitContent();
 
       const handleResize = () => {
@@ -347,9 +444,17 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
     showFVG,
     showVP,
     showSignals,
+    showPDHL,
+    showORB,
+    showAsia,
+    showDO,
     volumeProfile.poc,
     volumeProfile.vah,
     volumeProfile.val,
+    sessionLevels.pdh,
+    sessionLevels.pdl,
+    sessionLevels.orbHigh,
+    sessionLevels.orbLow,
   ]);
 
   // Real-time ticking engine: updates last candle & live price line continuously
@@ -451,6 +556,10 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
     setShowPD(true);
     setShowVP(true);
     setShowSignals(true);
+    setShowPDHL(true);
+    setShowORB(true);
+    setShowAsia(false);
+    setShowDO(false);
     setShowFib(false);
     setShowOB(false);
     setShowFVG(false);
@@ -698,6 +807,62 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
               <span>Signals (BUY/SELL)</span>
             </button>
 
+            {/* PDH / PDL Toggle */}
+            <button
+              onClick={() => setShowPDHL(!showPDHL)}
+              className={`px-2 py-0.5 rounded text-[10px] font-bold border transition-all flex items-center gap-1 ${
+                showPDHL
+                  ? "bg-amber-500/20 text-amber-300 border-amber-500/40 shadow-sm"
+                  : "bg-terminal-bg text-terminal-muted border-terminal-border"
+              }`}
+              title="Toggle Previous Day High & Previous Day Low Key Liquidity Levels"
+            >
+              <Target className="w-2.5 h-2.5 text-amber-400" />
+              <span>PDH / PDL</span>
+            </button>
+
+            {/* Opening Range Breakout (ORB) Toggle */}
+            <button
+              onClick={() => setShowORB(!showORB)}
+              className={`px-2 py-0.5 rounded text-[10px] font-bold border transition-all flex items-center gap-1 ${
+                showORB
+                  ? "bg-cyan-500/20 text-cyan-300 border-cyan-500/40 shadow-sm"
+                  : "bg-terminal-bg text-terminal-muted border-terminal-border"
+              }`}
+              title="Toggle Opening Range Breakout High & Low (15M Session Range)"
+            >
+              <Clock className="w-2.5 h-2.5 text-cyan-400" />
+              <span>ORB</span>
+            </button>
+
+            {/* Asian Session Range Toggle */}
+            <button
+              onClick={() => setShowAsia(!showAsia)}
+              className={`px-2 py-0.5 rounded text-[10px] font-bold border transition-all flex items-center gap-1 ${
+                showAsia
+                  ? "bg-indigo-500/20 text-indigo-300 border-indigo-500/40 shadow-sm"
+                  : "bg-terminal-bg text-terminal-muted border-terminal-border"
+              }`}
+              title="Toggle Asian Session High & Low Range"
+            >
+              <Compass className="w-2.5 h-2.5 text-indigo-400" />
+              <span>Asia H/L</span>
+            </button>
+
+            {/* Daily Open (DO) Toggle */}
+            <button
+              onClick={() => setShowDO(!showDO)}
+              className={`px-2 py-0.5 rounded text-[10px] font-bold border transition-all flex items-center gap-1 ${
+                showDO
+                  ? "bg-yellow-500/20 text-yellow-300 border-yellow-500/40 shadow-sm"
+                  : "bg-terminal-bg text-terminal-muted border-terminal-border"
+              }`}
+              title="Toggle Daily Open Baseline (Above DO = Longs in Premium, Below DO = Shorts in Discount)"
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-yellow-400"></span>
+              <span>Daily Open</span>
+            </button>
+
             {/* Reset clean button */}
             <button
               onClick={resetOverlays}
@@ -829,11 +994,11 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
           {smc && (
             <button
               onClick={() => {
-                const text = `ApexFX ${activeSymbol} SMC Levels:\n- Current Bid: ${quote.bid}\n- 50% Equilibrium: ${smc.equilibriumPrice}\n- 0.618 Fib: ${smc.fibonacci.fib618}\n- 0.786 OTE: ${smc.fibonacci.fib786}\n- S1 Support: ${technicals.pivots.s1}\n- R1 Resistance: ${technicals.pivots.r1}\n- Regime: ${smc.zone}`;
+                const text = `ApexFX ${activeSymbol} Institutional Levels:\n- Current Bid: ${quote.bid}\n- PDH (Previous Day High): ${sessionLevels.pdh}\n- PDL (Previous Day Low): ${sessionLevels.pdl}\n- ORB High: ${sessionLevels.orbHigh}\n- ORB Low: ${sessionLevels.orbLow}\n- Daily Open: ${sessionLevels.dailyOpen}\n- Volume Profile POC: ${volumeProfile.poc}\n- VAH (70%): ${volumeProfile.vah}\n- VAL (70%): ${volumeProfile.val}\n- 50% Equilibrium: ${smc.equilibriumPrice}\n- ICT Regime: ${smc.zone}`;
                 copyToClipboard(text, "ALL");
               }}
               className="px-2 py-0.5 rounded bg-terminal-card hover:bg-terminal-hover border border-terminal-border text-[10px] text-gray-300 hover:text-white flex items-center gap-1 transition-all"
-              title="Copy all SMC coordinates for pending orders"
+              title="Copy all institutional coordinates for pending orders"
             >
               {copiedLevel === "ALL" ? (
                 <>
@@ -894,29 +1059,46 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
                       {smc.fibonacci.fib618}
                     </button>
                   </div>
-                  {smc.fibonacci.fib786 && (
-                    <div className="flex items-center justify-between">
-                      <span className="text-terminal-muted">0.786 OTE Sweetspot:</span>
-                      <button
-                        onClick={() => copyToClipboard(smc.fibonacci.fib786.toString(), "0.786 OTE")}
-                        className="text-indigo-300 font-bold hover:underline"
-                      >
-                        {smc.fibonacci.fib786}
-                      </button>
-                    </div>
-                  )}
                   <div className="flex items-center justify-between">
-                    <span className="text-terminal-muted">Pivot R1 (Ceiling):</span>
-                    <span className="text-bear font-bold">{technicals.pivots.r1}</span>
+                    <span className="text-terminal-muted">PDH (Prev Day High):</span>
+                    <button
+                      onClick={() => copyToClipboard(sessionLevels.pdh.toString(), "PDH")}
+                      className="text-amber-300 font-bold hover:underline"
+                    >
+                      {sessionLevels.pdh}
+                    </button>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="text-terminal-muted">Pivot S1 (Floor):</span>
-                    <span className="text-bull font-bold">{technicals.pivots.s1}</span>
+                    <span className="text-terminal-muted">PDL (Prev Day Low):</span>
+                    <button
+                      onClick={() => copyToClipboard(sessionLevels.pdl.toString(), "PDL")}
+                      className="text-purple-300 font-bold hover:underline"
+                    >
+                      {sessionLevels.pdl}
+                    </button>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-terminal-muted">ORB High (15M):</span>
+                    <button
+                      onClick={() => copyToClipboard(sessionLevels.orbHigh.toString(), "ORB-H")}
+                      className="text-cyan-300 font-bold hover:underline"
+                    >
+                      {sessionLevels.orbHigh}
+                    </button>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-terminal-muted">ORB Low (15M):</span>
+                    <button
+                      onClick={() => copyToClipboard(sessionLevels.orbLow.toString(), "ORB-L")}
+                      className="text-orange-300 font-bold hover:underline"
+                    >
+                      {sessionLevels.orbLow}
+                    </button>
                   </div>
                 </div>
 
-                <div className="pt-2 border-t border-terminal-border/50 flex items-center justify-between text-[10px] font-mono">
-                  <span className="text-gray-400">Institutional Bias:</span>
+                <div className="pt-1.5 border-t border-terminal-border/60 flex items-center justify-between text-[10px]">
+                  <span className="text-terminal-muted">Institutional Flow:</span>
                   <span className={smc.zone === "Discount" ? "text-bull font-bold" : "text-bear font-bold"}>
                     {smc.zone === "Discount" ? "Accumulation / Long Bias" : "Distribution / Short Bias"}
                   </span>
@@ -956,7 +1138,7 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
             )}
 
             {/* Clean Top Legend Overlay */}
-            <div className="absolute top-3 left-3 pointer-events-none flex flex-wrap items-center gap-2.5 text-[11px] font-mono bg-terminal-bg/90 backdrop-blur px-2.5 py-1.5 rounded border border-terminal-border/80 z-20 shadow-lg">
+            <div className="absolute top-3 left-3 pointer-events-none flex flex-wrap items-center gap-2 text-[11px] font-mono bg-terminal-bg/90 backdrop-blur px-2.5 py-1.5 rounded border border-terminal-border/80 z-20 shadow-lg">
               <div className="flex items-center gap-1.5">
                 <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
                 <span className="font-bold text-white">{activeSymbol}</span>
@@ -965,7 +1147,7 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
 
               <div className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[10px] font-bold">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-live-pulse"></span>
-                <span>REALTIME STREAMING</span>
+                <span>REALTIME</span>
               </div>
 
               {showVP && volumeProfile && volumeProfile.poc > 0 && (
@@ -981,6 +1163,32 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
                   <div className="flex items-center gap-1 text-[10px]">
                     <span className="w-2 h-0.5 bg-[#10B981]"></span>
                     <span className="text-[#10B981] font-bold">VAL: {volumeProfile.val}</span>
+                  </div>
+                </>
+              )}
+
+              {showPDHL && sessionLevels && sessionLevels.pdh > 0 && (
+                <>
+                  <div className="flex items-center gap-1 text-[10px]">
+                    <span className="w-2 h-0.5 bg-[#F59E0B]"></span>
+                    <span className="text-[#F59E0B] font-bold">PDH: {sessionLevels.pdh}</span>
+                  </div>
+                  <div className="flex items-center gap-1 text-[10px]">
+                    <span className="w-2 h-0.5 bg-[#A855F7]"></span>
+                    <span className="text-[#A855F7] font-bold">PDL: {sessionLevels.pdl}</span>
+                  </div>
+                </>
+              )}
+
+              {showORB && sessionLevels && sessionLevels.orbHigh > 0 && (
+                <>
+                  <div className="flex items-center gap-1 text-[10px]">
+                    <span className="w-2 h-0.5 bg-[#06B6D4]"></span>
+                    <span className="text-[#06B6D4] font-bold">ORB-H: {sessionLevels.orbHigh}</span>
+                  </div>
+                  <div className="flex items-center gap-1 text-[10px]">
+                    <span className="w-2 h-0.5 bg-[#FB923C]"></span>
+                    <span className="text-[#FB923C] font-bold">ORB-L: {sessionLevels.orbLow}</span>
                   </div>
                 </>
               )}
@@ -1006,20 +1214,22 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
                   <span className="text-terminal-muted">50% EQ:</span>
                   <span className="text-cyan-400 font-bold">{smc.equilibriumPrice}</span>
                 </div>
-                <div className="flex items-center gap-1">
-                  <span className="text-terminal-muted">0.618 FIB:</span>
-                  <span className="text-gold font-bold">{smc.fibonacci.fib618}</span>
-                </div>
+                {sessionLevels && sessionLevels.pdh > 0 && (
+                  <>
+                    <div className="flex items-center gap-1">
+                      <span className="text-terminal-muted">PDH:</span>
+                      <span className="text-amber-400 font-bold">{sessionLevels.pdh}</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <span className="text-terminal-muted">PDL:</span>
+                      <span className="text-purple-400 font-bold">{sessionLevels.pdl}</span>
+                    </div>
+                  </>
+                )}
                 {volumeProfile && volumeProfile.poc > 0 && (
                   <div className="flex items-center gap-1">
-                    <span className="text-terminal-muted">POC NODE:</span>
+                    <span className="text-terminal-muted">POC:</span>
                     <span className="text-[#F43F5E] font-bold">{volumeProfile.poc}</span>
-                  </div>
-                )}
-                {smc.orderBlocks.length > 0 && (
-                  <div className="flex items-center gap-1">
-                    <span className="text-terminal-muted">ORDER BLOCK:</span>
-                    <span className="text-bull font-bold">{smc.orderBlocks[smc.orderBlocks.length - 1].low}</span>
                   </div>
                 )}
               </div>

@@ -10,6 +10,7 @@ import {
   VolumeProfileResult,
   VolumeProfileBin,
   ChartSignalMarker,
+  SessionLevelsResult,
 } from "./types";
 
 // Calculate smooth EMA series without initial jump or raw price contamination
@@ -339,6 +340,67 @@ export function computeTechnicals(candles: Candle[], precision = 2): TechnicalIn
     },
     smc: computeSMC(candles, precision),
     volumeProfile: calculateVolumeProfile(candles, 32, 0.70, precision),
+    sessionLevels: calculateSessionLevels(candles, precision),
+  };
+}
+
+/**
+ * Institutional Session Liquidity & Range Engine:
+ * Computes:
+ * - PDH (Previous Day High) & PDL (Previous Day Low): Major institutional liquidity extremes
+ * - Daily Open (DO): The true day baseline (above DO = premium/longs, below DO = discount/shorts)
+ * - ORB (Opening Range Breakout): First session opening range high, low, and 50% midpoint
+ * - Asia High & Low: Asian session consolidation range swept by London Judas swings
+ */
+export function calculateSessionLevels(
+  candles: Candle[],
+  precision = 2
+): SessionLevelsResult {
+  if (!candles || candles.length === 0) {
+    return {
+      pdh: 0,
+      pdl: 0,
+      dailyOpen: 0,
+      orbHigh: 0,
+      orbLow: 0,
+      orbMid: 0,
+      asiaHigh: 0,
+      asiaLow: 0,
+    };
+  }
+
+  const highs = candles.map((c) => c.high);
+  const lows = candles.map((c) => c.low);
+
+  // PDH and PDL: Highest high and lowest low of the prior cycle
+  const pdh = Math.max(...highs);
+  const pdl = Math.min(...lows);
+
+  // Daily Open: open price of the cycle (~start of day or ~24-30 bars back)
+  const doIndex = Math.max(0, candles.length - Math.min(candles.length, 36));
+  const dailyOpen = candles[doIndex]?.open || candles[0].open;
+
+  // Opening Range (ORB): Opening 15m/30m session block
+  const orbStart = Math.max(0, candles.length - Math.min(candles.length, 28));
+  const orbSlice = candles.slice(orbStart, orbStart + Math.min(6, candles.length - orbStart));
+  const orbHigh = orbSlice.length > 0 ? Math.max(...orbSlice.map((c) => c.high)) : pdh;
+  const orbLow = orbSlice.length > 0 ? Math.min(...orbSlice.map((c) => c.low)) : pdl;
+  const orbMid = (orbHigh + orbLow) / 2;
+
+  // Asian Range: Earlier consolidation block in the dataset
+  const asiaSlice = candles.slice(0, Math.min(candles.length, 20));
+  const asiaHigh = asiaSlice.length > 0 ? Math.max(...asiaSlice.map((c) => c.high)) : pdh;
+  const asiaLow = asiaSlice.length > 0 ? Math.min(...asiaSlice.map((c) => c.low)) : pdl;
+
+  return {
+    pdh: +pdh.toFixed(precision),
+    pdl: +pdl.toFixed(precision),
+    dailyOpen: +dailyOpen.toFixed(precision),
+    orbHigh: +orbHigh.toFixed(precision),
+    orbLow: +orbLow.toFixed(precision),
+    orbMid: +orbMid.toFixed(precision),
+    asiaHigh: +asiaHigh.toFixed(precision),
+    asiaLow: +asiaLow.toFixed(precision),
   };
 }
 

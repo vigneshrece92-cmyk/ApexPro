@@ -48,6 +48,18 @@ export interface TechnicalIndicatorSet {
   };
   smc?: SMCData;
   volumeProfile?: VolumeProfileResult;
+  sessionLevels?: SessionLevelsResult;
+}
+
+export interface SessionLevelsResult {
+  pdh: number; // Previous Day High (Key Buyside Liquidity)
+  pdl: number; // Previous Day Low (Key Sellside Liquidity)
+  dailyOpen: number; // Day Open Price Baseline
+  orbHigh: number; // Opening Range High (15M / 30M Session Open Range)
+  orbLow: number; // Opening Range Low (15M / 30M Session Open Range)
+  orbMid: number; // Opening Range Midpoint (50% Equilibrium)
+  asiaHigh: number; // Asian Session High (Asia Liquidity Pool)
+  asiaLow: number; // Asian Session Low (Asia Liquidity Pool)
 }
 
 export interface VolumeProfileBin {
