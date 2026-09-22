@@ -47,6 +47,30 @@ export interface TechnicalIndicatorSet {
     s3: number;
   };
   smc?: SMCData;
+  volumeProfile?: VolumeProfileResult;
+}
+
+export interface VolumeProfileBin {
+  price: number;
+  volume: number;
+  isValueArea: boolean;
+}
+
+export interface VolumeProfileResult {
+  poc: number; // Point of Control
+  vah: number; // Value Area High (70%)
+  val: number; // Value Area Low (70%)
+  totalVolume: number;
+  bins: VolumeProfileBin[];
+}
+
+export interface ChartSignalMarker {
+  time: number | string;
+  position: "aboveBar" | "belowBar";
+  color: string;
+  shape: "arrowUp" | "arrowDown";
+  text: string;
+  size: number;
 }
 
 export interface FibonacciLevels {

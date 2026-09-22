@@ -7,6 +7,9 @@ import {
   OrderBlock,
   FairValueGap,
   SMCData,
+  VolumeProfileResult,
+  VolumeProfileBin,
+  ChartSignalMarker,
 } from "./types";
 
 // Calculate smooth EMA series without initial jump or raw price contamination
@@ -335,6 +338,7 @@ export function computeTechnicals(candles: Candle[], precision = 2): TechnicalIn
       s3: supports[2] || +(pivot - atr * 3).toFixed(precision),
     },
     smc: computeSMC(candles, precision),
+    volumeProfile: calculateVolumeProfile(candles, 32, 0.70, precision),
   };
 }
 
@@ -552,4 +556,186 @@ export function generateTradeSignalFromData(
     timestamp: new Date().toLocaleTimeString(),
     smc: smcData,
   };
+}
+
+/**
+ * Institutional Volume Profile Engine (VAH, VAL, POC)
+ * Computes price distribution, POC (Point of Control), and the 70% Value Area (VAH & VAL).
+ */
+export function calculateVolumeProfile(
+  candles: Candle[],
+  numBins = 32,
+  valueAreaPct = 0.70,
+  precision = 2
+): VolumeProfileResult {
+  if (!candles || candles.length === 0) {
+    return { poc: 0, vah: 0, val: 0, totalVolume: 0, bins: [] };
+  }
+
+  // Use the most recent 120 candles for high-definition visible range profile
+  const lookback = Math.min(candles.length, 120);
+  const slice = candles.slice(-lookback);
+
+  let minLow = Infinity;
+  let maxHigh = -Infinity;
+
+  for (const c of slice) {
+    if (c.low < minLow) minLow = c.low;
+    if (c.high > maxHigh) maxHigh = c.high;
+  }
+
+  if (minLow === Infinity || maxHigh === -Infinity || minLow >= maxHigh) {
+    const c = slice[slice.length - 1];
+    return {
+      poc: c.close,
+      vah: +(c.close * 1.002).toFixed(precision),
+      val: +(c.close * 0.998).toFixed(precision),
+      totalVolume: 100,
+      bins: [],
+    };
+  }
+
+  const range = maxHigh - minLow;
+  const binStep = range / numBins;
+
+  const bins: VolumeProfileBin[] = [];
+  for (let i = 0; i < numBins; i++) {
+    bins.push({
+      price: +(minLow + (i + 0.5) * binStep).toFixed(precision),
+      volume: 0,
+      isValueArea: false,
+    });
+  }
+
+  let totalVolume = 0;
+
+  for (const c of slice) {
+    const candleVol =
+      typeof (c as any).volume === "number" && (c as any).volume > 0
+        ? (c as any).volume
+        : Math.max(50, Math.round((c.high - c.low) * 1000 + 100));
+
+    const startIdx = Math.max(0, Math.min(numBins - 1, Math.floor((c.low - minLow) / binStep)));
+    const endIdx = Math.max(0, Math.min(numBins - 1, Math.floor((c.high - minLow) / binStep)));
+    const spannedBins = endIdx - startIdx + 1;
+    const volPerBin = candleVol / spannedBins;
+
+    for (let idx = startIdx; idx <= endIdx; idx++) {
+      bins[idx].volume += volPerBin;
+      totalVolume += volPerBin;
+    }
+  }
+
+  let maxVol = -1;
+  let pocIdx = 0;
+  for (let i = 0; i < bins.length; i++) {
+    if (bins[i].volume > maxVol) {
+      maxVol = bins[i].volume;
+      pocIdx = i;
+    }
+  }
+
+  bins[pocIdx].isValueArea = true;
+  let currentVAVolume = bins[pocIdx].volume;
+  const targetVAVolume = totalVolume * valueAreaPct;
+
+  let upIdx = pocIdx + 1;
+  let downIdx = pocIdx - 1;
+
+  while (currentVAVolume < targetVAVolume && (upIdx < bins.length || downIdx >= 0)) {
+    const volUp = upIdx < bins.length ? bins[upIdx].volume : -1;
+    const volDown = downIdx >= 0 ? bins[downIdx].volume : -1;
+
+    if (volUp >= volDown && volUp >= 0) {
+      bins[upIdx].isValueArea = true;
+      currentVAVolume += volUp;
+      upIdx++;
+    } else if (volDown >= 0) {
+      bins[downIdx].isValueArea = true;
+      currentVAVolume += volDown;
+      downIdx--;
+    } else {
+      break;
+    }
+  }
+
+  const vaIndices = bins.map((b, idx) => (b.isValueArea ? idx : -1)).filter((idx) => idx !== -1);
+  const minVAIdx = vaIndices.length > 0 ? Math.min(...vaIndices) : pocIdx;
+  const maxVAIdx = vaIndices.length > 0 ? Math.max(...vaIndices) : pocIdx;
+
+  return {
+    poc: bins[pocIdx].price,
+    vah: bins[maxVAIdx].price,
+    val: bins[minVAIdx].price,
+    totalVolume: Math.round(totalVolume),
+    bins,
+  };
+}
+
+/**
+ * In-Chart Institutional BUY / SELL Signal Generator
+ * Generates directional marker arrows pinned directly to candles on liquidity sweeps and momentum shifts.
+ */
+export function detectChartSignals(candles: Candle[], precision = 2): ChartSignalMarker[] {
+  if (!candles || candles.length < 15) return [];
+  const markers: ChartSignalMarker[] = [];
+  const closes = candles.map((c) => c.close);
+  const ema20 = calculateEMA(closes, 20);
+  const ema50 = calculateEMA(closes, 50);
+
+  let lastSignalIdx = -10;
+
+  for (let i = 12; i < candles.length; i++) {
+    // Maintain clean chart spacing: min 6 candles between signals
+    if (i - lastSignalIdx < 6) continue;
+
+    const c = candles[i];
+    const prevC = candles[i - 1];
+
+    const isBullSweep =
+      c.low < prevC.low &&
+      c.close > (c.open + c.low) / 2 &&
+      c.close > prevC.low &&
+      c.close > c.open;
+
+    const isEMAUpCross =
+      ema20[i] > ema50[i] &&
+      ema20[i - 1] <= ema50[i - 1] &&
+      c.close > ema20[i];
+
+    const isBearSweep =
+      c.high > prevC.high &&
+      c.close < (c.open + c.high) / 2 &&
+      c.close < prevC.high &&
+      c.close < c.open;
+
+    const isEMADownCross =
+      ema20[i] < ema50[i] &&
+      ema20[i - 1] >= ema50[i - 1] &&
+      c.close < ema20[i];
+
+    if (isBullSweep || isEMAUpCross) {
+      markers.push({
+        time: c.time as any,
+        position: "belowBar",
+        color: "#00E676",
+        shape: "arrowUp",
+        text: `BUY ${c.close.toFixed(precision)}`,
+        size: 1.2,
+      });
+      lastSignalIdx = i;
+    } else if (isBearSweep || isEMADownCross) {
+      markers.push({
+        time: c.time as any,
+        position: "aboveBar",
+        color: "#FF3B30",
+        shape: "arrowDown",
+        text: `SELL ${c.close.toFixed(precision)}`,
+        size: 1.2,
+      });
+      lastSignalIdx = i;
+    }
+  }
+
+  return markers;
 }
