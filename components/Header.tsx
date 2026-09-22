@@ -35,6 +35,7 @@ interface HeaderProps {
   mt5Connected?: boolean;
   onOpenDemoPanel?: () => void;
   demoBalance?: number;
+  autoBotEnabled?: boolean;
   externalQuotes?: Record<AssetSymbol, Quote>;
 }
 
@@ -54,6 +55,7 @@ export const Header: React.FC<HeaderProps> = ({
   mt5Connected = true,
   onOpenDemoPanel,
   demoBalance = 3000.0,
+  autoBotEnabled = true,
   externalQuotes,
 }) => {
   const [quotes, setQuotes] = useState<Record<AssetSymbol, Quote>>(externalQuotes || INITIAL_QUOTES);
@@ -196,17 +198,35 @@ export const Header: React.FC<HeaderProps> = ({
         <div className="flex items-center gap-1 sm:gap-2 shrink-0">
           {/* Internal Demo Broker Live Pill ($3,000 Balance - 100% Vercel Ready) */}
           {(onOpenDemoPanel || onOpenMT5Panel) && (
-            <button
-              onClick={onOpenDemoPanel || onOpenMT5Panel}
-              className="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1.5 rounded-md bg-gradient-to-r from-emerald-950/70 to-teal-950/70 hover:from-emerald-900/80 hover:to-teal-900/80 text-emerald-300 border border-emerald-500/50 text-xs font-mono font-bold transition-all shadow-md shadow-emerald-500/10"
-              title="ApexFX Internal Demo Broker ($3,000) • 100% Vercel Ready • 4H PO3 Auto-Bot"
-            >
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-              <Zap className="w-3.5 h-3.5 text-emerald-400" />
-              <span>
-                <span className="hidden xs:inline">Demo: </span>${(demoBalance ?? mt5Balance ?? 3000.0).toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
-              </span>
-            </button>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={onOpenDemoPanel || onOpenMT5Panel}
+                className="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1.5 rounded-md bg-gradient-to-r from-emerald-950/70 to-teal-950/70 hover:from-emerald-900/80 hover:to-teal-900/80 text-emerald-300 border border-emerald-500/50 text-xs font-mono font-bold transition-all shadow-md shadow-emerald-500/10"
+                title="ApexFX Internal Demo Broker ($3,000) • 100% Vercel Ready • 4H PO3 Station"
+              >
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                <Zap className="w-3.5 h-3.5 text-emerald-400" />
+                <span>
+                  <span className="hidden xs:inline">Demo: </span>${(demoBalance ?? mt5Balance ?? 3000.0).toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
+                </span>
+              </button>
+
+              {/* Quick Auto-Bot Status Indicator */}
+              {onOpenDemoPanel && (
+                <button
+                  onClick={onOpenDemoPanel}
+                  className={`hidden xs:flex items-center gap-1 px-2 py-1.5 rounded-md border text-[10px] font-mono font-bold transition-all ${
+                    autoBotEnabled
+                      ? "bg-blue-950/80 text-blue-300 border-blue-500/50 shadow-sm hover:bg-blue-900/80"
+                      : "bg-gray-900/80 text-gray-400 border-gray-700 hover:text-white"
+                  }`}
+                  title={autoBotEnabled ? "Auto-Bot ACTIVE: Click to view trades / configure" : "Auto-Bot PAUSED: Click to activate"}
+                >
+                  <span className={`w-1.5 h-1.5 rounded-full ${autoBotEnabled ? "bg-blue-400 animate-pulse" : "bg-gray-500"}`}></span>
+                  <span>{autoBotEnabled ? "BOT: ON" : "BOT: OFF"}</span>
+                </button>
+              )}
+            </div>
           )}
 
           {/* Institutional Alerts Bell Trigger */}

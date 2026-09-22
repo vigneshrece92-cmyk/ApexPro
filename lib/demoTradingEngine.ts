@@ -1,4 +1,5 @@
 import { AssetSymbol, Quote, InstitutionalAlert } from "./types";
+import { INITIAL_QUOTES } from "./defaultData";
 
 export interface DemoPosition {
   ticket: number;
@@ -118,9 +119,9 @@ export const INITIAL_ACCOUNT_STATE: DemoAccountState = {
   open_positions: [],
   history: [],
   auto_bot: {
-    enabled: false,
+    enabled: true,
     risk_percent: 1.0,
-    market_mode: "STRICT_REAL",
+    market_mode: "24_7_PRACTICE",
     logs: [
       {
         id: "init-1",
@@ -132,7 +133,7 @@ export const INITIAL_ACCOUNT_STATE: DemoAccountState = {
         id: "init-2",
         timestamp: Date.now() - 180000,
         type: "info",
-        message: "Institutional 4H PO3 & Breakout detector ready. Fixed 0.02 lot size applied across all pairs.",
+        message: "Autonomous 4H PO3 Auto-Bot active & scanning confirmed institutional setups (24/7 Practice Mode).",
       },
     ],
   },
@@ -205,7 +206,8 @@ export function loadDemoAccount(): DemoAccountState {
       auto_bot: {
         ...INITIAL_ACCOUNT_STATE.auto_bot,
         ...(parsed.auto_bot || {}),
-        market_mode: parsed.auto_bot?.market_mode === "24_7_PRACTICE" ? "24_7_PRACTICE" : "STRICT_REAL",
+        enabled: parsed.auto_bot?.enabled !== undefined ? parsed.auto_bot.enabled : true,
+        market_mode: parsed.auto_bot?.market_mode === "STRICT_REAL" ? "STRICT_REAL" : "24_7_PRACTICE",
         logs: Array.isArray(parsed.auto_bot?.logs) ? parsed.auto_bot.logs : INITIAL_ACCOUNT_STATE.auto_bot.logs,
       },
     };
@@ -233,15 +235,15 @@ export function resetDemoAccount(): DemoAccountState {
   const resetState: DemoAccountState = {
     ...INITIAL_ACCOUNT_STATE,
     auto_bot: {
-      enabled: false,
+      enabled: true,
       risk_percent: 1.0,
-      market_mode: "STRICT_REAL",
+      market_mode: "24_7_PRACTICE",
       logs: [
         {
           id: `rst-${Date.now()}`,
           timestamp: Date.now(),
           type: "info",
-          message: "Account reset to initial $3,000.00 demo balance. All positions cleared.",
+          message: "Account reset to initial $3,000.00 demo balance. 4H PO3 Auto-Bot active & scanning.",
         },
       ],
     },
@@ -680,47 +682,57 @@ export function evaluateAutoBot(
   }
 
   // Find confirmed alerts (4H Breakout, AMD Judas, FVG, Order Block, Silver Bullet)
-  // Prioritize XAUUSD first, then any other confirmed setup
-  const eligibleAlert = alerts.find((a) => {
-    if (!a || !a.symbol) return false;
+  // Loop through all confirmed alerts to find one not already traded or on active symbol
+  let targetAlert: InstitutionalAlert | null = null;
+  let targetQuote: Quote | null = null;
+
+  for (const a of alerts) {
+    if (!a || !a.symbol) continue;
     const isAMD = a.patternType === "AMD_ACCUMULATION_DISTRIBUTION" && typeof a.amdPhase === "string" && a.amdPhase.includes("Distribution");
     const is4HBreakout = a.patternType === "4H_BREAKOUT_RETEST" && a.status === "CONFIRMED";
     const isFVG = a.patternType === "FVG_MITIGATION" && a.status === "CONFIRMED";
     const isOB = (a.patternType as string) === "ORDER_BLOCK_MITIGATION" && a.status === "CONFIRMED";
     const isSB = a.patternType === "ICT_SILVER_BULLET" && a.status === "CONFIRMED";
-    return isAMD || is4HBreakout || isFVG || isOB || isSB;
-  });
+    if (!isAMD && !is4HBreakout && !isFVG && !isOB && !isSB) continue;
 
-  if (!eligibleAlert) return state;
+    // Check if symbol already has an active open position
+    const alreadyOpenOnSymbol = openPositions.some((p) => p.symbol === a.symbol);
+    if (alreadyOpenOnSymbol) continue;
 
-  // Resolve matching quote for this alert
-  const targetQuote = allQuotes?.[eligibleAlert.symbol] || (quote?.symbol === eligibleAlert.symbol ? quote : null);
-  if (!targetQuote || typeof targetQuote.bid !== "number" || typeof targetQuote.ask !== "number") {
+    // Resolve matching quote for this alert with reliable fallback
+    const resolvedQuote = allQuotes?.[a.symbol] || (quote?.symbol === a.symbol ? quote : null) || INITIAL_QUOTES[a.symbol];
+    if (!resolvedQuote || typeof resolvedQuote.bid !== "number" || typeof resolvedQuote.ask !== "number") {
+      continue;
+    }
+
+    // Per-symbol cooldown: don't open trade on same symbol within 60s
+    const recentlyTradedSymbol = openPositions.some(
+      (p) => p.symbol === a.symbol && typeof p.time === "number" && Date.now() - p.time < 60000
+    );
+    if (recentlyTradedSymbol) continue;
+
+    targetAlert = a;
+    targetQuote = resolvedQuote;
+    break;
+  }
+
+  if (!targetAlert || !targetQuote) {
     return state;
   }
 
-  // Check if a position already exists for this alert id or recently opened (5 min cooldown)
-  const alertIdPrefix = (eligibleAlert.id || "alert").slice(0, 8);
-  const recentTrade = openPositions.some(
-    (p) =>
-      (typeof p.comment === "string" && p.comment.includes(alertIdPrefix)) ||
-      (typeof p.time === "number" && Date.now() - p.time < 300000)
-  );
-  if (recentTrade) return state;
-
-  const action: "BUY" | "SELL" = (eligibleAlert.direction || "BUY").includes("BUY") ? "BUY" : "SELL";
-  const openPrice = action === "BUY" ? targetQuote.ask : targetQuote.bid;
+  const action: "BUY" | "SELL" = (targetAlert.direction || "BUY").includes("BUY") ? "BUY" : "SELL";
+  const openPrice = action === "BUY" ? (targetQuote.ask || targetQuote.bid) : (targetQuote.bid || targetQuote.ask);
 
   const sl =
-    typeof eligibleAlert.stopLoss === "number" && !isNaN(eligibleAlert.stopLoss)
-      ? eligibleAlert.stopLoss
+    typeof targetAlert.stopLoss === "number" && !isNaN(targetAlert.stopLoss)
+      ? targetAlert.stopLoss
       : action === "BUY"
       ? openPrice - 15.0
       : openPrice + 15.0;
 
   const tp =
-    typeof eligibleAlert.takeProfit1 === "number" && !isNaN(eligibleAlert.takeProfit1)
-      ? eligibleAlert.takeProfit1
+    typeof targetAlert.takeProfit1 === "number" && !isNaN(targetAlert.takeProfit1)
+      ? targetAlert.takeProfit1
       : action === "BUY"
       ? openPrice + 30.0
       : openPrice - 30.0;
@@ -729,13 +741,13 @@ export function evaluateAutoBot(
   const safeLot = 0.02;
 
   const patternLabel =
-    eligibleAlert.patternType === "4H_BREAKOUT_RETEST"
+    targetAlert.patternType === "4H_BREAKOUT_RETEST"
       ? "4H Breakout & Retest"
-      : eligibleAlert.patternType === "FVG_MITIGATION"
+      : targetAlert.patternType === "FVG_MITIGATION"
       ? "4H Fair Value Gap (FVG) Mitigation"
-      : eligibleAlert.patternType === "AMD_ACCUMULATION_DISTRIBUTION"
+      : targetAlert.patternType === "AMD_ACCUMULATION_DISTRIBUTION"
       ? "ICT PO3 Judas Distribution Sweep"
-      : eligibleAlert.patternType === "ICT_SILVER_BULLET"
+      : targetAlert.patternType === "ICT_SILVER_BULLET"
       ? "ICT Silver Bullet Kill Zone Imbalance"
       : "Institutional Order Block Mitigation";
 
@@ -743,7 +755,7 @@ export function evaluateAutoBot(
     id: `bot-scan-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
     timestamp: Date.now(),
     type: "info",
-    message: `⚡ [Auto-Bot Trigger] Confirmed ${patternLabel} on ${eligibleAlert.symbol} detected! Executing standard 0.02 lots (1:1000 leverage).`,
+    message: `⚡ [Auto-Bot Trigger] Confirmed ${patternLabel} on ${targetAlert.symbol} detected! Executing standard 0.02 lots (1:1000 leverage).`,
   };
 
   const currentLogs = Array.isArray(state.auto_bot?.logs) ? state.auto_bot.logs : [];
@@ -756,13 +768,13 @@ export function evaluateAutoBot(
   };
 
   const tradeRes = executeDemoTrade(stateWithLog, {
-    symbol: eligibleAlert.symbol,
+    symbol: targetAlert.symbol,
     type: action,
     volume: safeLot,
     quote: targetQuote,
     sl,
     tp,
-    comment: `PO3_Bot_${alertIdPrefix}`,
+    comment: `PO3_Bot_${targetAlert.symbol}`,
   });
 
   return tradeRes.state;

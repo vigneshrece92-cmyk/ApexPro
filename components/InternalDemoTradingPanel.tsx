@@ -66,6 +66,7 @@ export const InternalDemoTradingPanel: React.FC<InternalDemoTradingPanelProps> =
     type: "success" | "error" | null;
     text: string;
   }>({ type: null, text: "" });
+  const [isTestingTg, setIsTestingTg] = useState(false);
 
   const round2 = (n: number) => Math.round(n * 100) / 100;
   const fmt2 = (v?: number, fallback = "0.00") => (typeof v === "number" && !isNaN(v) ? v.toFixed(2) : fallback);
@@ -163,7 +164,6 @@ export const InternalDemoTradingPanel: React.FC<InternalDemoTradingPanelProps> =
     }
   };
 
-  const [isTestingTg, setIsTestingTg] = useState(false);
   const handleTestTelegram = async () => {
     setIsTestingTg(true);
     try {

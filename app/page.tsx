@@ -366,6 +366,7 @@ export default function TerminalDashboard() {
         activeAlertCount={alerts.length}
         onOpenDemoPanel={() => setIsDemoPanelOpen(true)}
         demoBalance={demoAccount.balance}
+        autoBotEnabled={demoAccount?.auto_bot?.enabled ?? true}
         onOpenMT5Panel={() => setIsMT5PanelOpen(true)}
         mt5Balance={mt5AccountData.balance}
         mt5Connected={mt5AccountData.connected}
