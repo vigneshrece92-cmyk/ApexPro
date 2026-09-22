@@ -731,16 +731,13 @@ export function tickDemoPositions(
 }
 
 /**
- * Autonomous 4H PO3 Auto-Bot Engine
- * Scans active 4H Breakout/Retest, AMD, FVG, Order Block, and Silver Bullet setups and auto-executes if enabled
- */
-/**
  * Autonomous Pivot-Anchored Volume Profile (PAVP) & Institutional Trading Engine
  * Executes trades strictly on Volume Profile key levels:
  * - BUY CE @ VAL: Price sweeps/tests VAL and bounces -> Buys ATM Call (CE)
  * - BUY PE @ VAH: Price sweeps/tests VAH and rejects -> Buys ATM Put (PE)
  * - BUY CE @ POC: Retest bounce off POC -> Buys ATM Call (CE)
  * - BUY PE @ POC: Retest rejection off POC -> Buys ATM Put (PE)
+ * - VA Expansion Breakout: Trend continuation outside Value Area
  */
 export function evaluateAutoBot(
   state: DemoAccountState,
@@ -876,6 +873,56 @@ export function evaluateAutoBot(
         sl: latestSignal.sl,
         tp: latestSignal.tp1,
         comment: latestSignal.label,
+        optionContractName: `${quote.symbol} ${optContract.strike} ${optContract.type}`,
+        optionType: optContract.type,
+        optionStrike: optContract.strike,
+        optionEntryPremium: optContract.premiumAsk,
+        lotSizeMultiplier: optSpec.lotSize,
+        currency: currencySym,
+      });
+
+      return tradeRes.state;
+    }
+  }
+
+  // 2. Also check confirmed Institutional PAVP alerts for this asset
+  if (alerts && alerts.length > 0) {
+    const alert = alerts.find((a) => a.symbol === quote.symbol && a.status === "CONFIRMED");
+    const alreadyOpenOnSymbol = openPositions.some((p) => p.symbol === quote.symbol);
+    const recentlyTradedSymbol = openPositions.some(
+      (p) => p.symbol === quote.symbol && typeof p.time === "number" && Date.now() - p.time < 60000
+    );
+
+    if (alert && !alreadyOpenOnSymbol && !recentlyTradedSymbol) {
+      const isCE = alert.direction.includes("CE") || alert.direction.includes("BUY");
+      const optContract = getRecommendedOptionContract(quote.symbol, isCE ? "BUY CE" : "BUY PE", quote.bid);
+      const optSpec = getOptionSpec(quote.symbol);
+      const currencySym = quote.currency || state.currency || "₹";
+
+      const botLog: AutoBotLog = {
+        id: `bot-alert-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
+        timestamp: Date.now(),
+        type: "trade",
+        message: `⚡ [PAVP Alert Trigger] ${alert.title} confirmed on ${quote.symbol}! Auto-executing 1 Lot (${optSpec.lotSize} Qty) ${quote.symbol} ${optContract.strike} ${optContract.type} @ ${currencySym}${optContract.premiumAsk.toFixed(2)}. SL: ${currencySym}${alert.stopLoss}, TP1 (POC): ${currencySym}${alert.takeProfit1}.`,
+      };
+
+      const currentLogs = Array.isArray(state.auto_bot?.logs) ? state.auto_bot.logs : [];
+      const stateWithLog: DemoAccountState = {
+        ...state,
+        auto_bot: {
+          ...state.auto_bot,
+          logs: [botLog, ...currentLogs].slice(0, 50),
+        },
+      };
+
+      const tradeRes = executeDemoTrade(stateWithLog, {
+        symbol: quote.symbol,
+        type: isCE ? "BUY" : "SELL",
+        volume: 1.0,
+        quote,
+        sl: alert.stopLoss,
+        tp: alert.takeProfit1,
+        comment: `PAVP: ${alert.patternType}`,
         optionContractName: `${quote.symbol} ${optContract.strike} ${optContract.type}`,
         optionType: optContract.type,
         optionStrike: optContract.strike,

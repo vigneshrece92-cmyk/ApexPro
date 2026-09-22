@@ -82,10 +82,10 @@ export async function GET(req: NextRequest) {
             const regularPrice = meta?.regularMarketPrice;
             if (regularPrice == null) return;
 
-            // MCX conversion: NYMEX CL=F / NG=F converted to MCX INR
+            // MCX conversion: NYMEX CL=F / NG=F converted to MCX INR with true Indian customs & tariff parity
             const isCrude = key === "CRUDEOIL";
             const isNatGas = key === "NATURALGAS";
-            const mcxMultiplier = isCrude || isNatGas ? 83.8 : 1.0;
+            const mcxMultiplier = isCrude ? 96.85 : isNatGas ? 87.20 : 1.0;
 
             const effectivePrice = regularPrice * mcxMultiplier;
             const prevClose = (meta?.previousClose || meta?.chartPreviousClose || regularPrice) * mcxMultiplier;
@@ -131,19 +131,26 @@ export async function GET(req: NextRequest) {
                 const v = quotes.volume?.[i] || 0;
 
                 if (o != null && c != null && h != null && l != null) {
-                  parsed.push({
-                    time: times[i],
-                    open: +(o * mcxMultiplier).toFixed(precision),
-                    high: +(h * mcxMultiplier).toFixed(precision),
-                    low: +(l * mcxMultiplier).toFixed(precision),
-                    close: +(c * mcxMultiplier).toFixed(precision),
-                    volume: v,
-                  });
+                  // Filter out Yahoo metadata artifacts where bar has 0 volume and 0 price range
+                  const isFlatArtifact = i === times.length - 1 && v === 0 && Math.abs(h - l) < 0.0001 && parsed.length > 0;
+                  if (!isFlatArtifact) {
+                    parsed.push({
+                      time: times[i],
+                      open: +(o * mcxMultiplier).toFixed(precision),
+                      high: +(h * mcxMultiplier).toFixed(precision),
+                      low: +(l * mcxMultiplier).toFixed(precision),
+                      close: +(c * mcxMultiplier).toFixed(precision),
+                      volume: v,
+                    });
+                  }
                 }
               }
 
               if (parsed.length > 0) {
-                parsed[parsed.length - 1].close = +effectivePrice.toFixed(precision);
+                const lastBar = parsed[parsed.length - 1];
+                lastBar.close = +effectivePrice.toFixed(precision);
+                lastBar.high = Math.max(lastBar.high, lastBar.close);
+                lastBar.low = Math.min(lastBar.low, lastBar.close);
                 activeCandles = parsed.slice(-count);
               }
             }

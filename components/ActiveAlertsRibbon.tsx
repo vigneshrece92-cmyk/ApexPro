@@ -26,7 +26,7 @@ export const ActiveAlertsRibbon: React.FC<ActiveAlertsRibbonProps> = ({
       >
         <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping"></span>
         <Bell className="w-3.5 h-3.5 text-amber-400" />
-        <span>4H BREAKOUT & AMD RADAR</span>
+        <span>PAVP VOLUME PROFILE RADAR</span>
         <span className="px-1.5 py-0.2 text-[10px] font-mono rounded bg-amber-400 text-black font-black">
           {alerts.length}
         </span>
@@ -35,8 +35,17 @@ export const ActiveAlertsRibbon: React.FC<ActiveAlertsRibbonProps> = ({
       {/* Horizontal alert chips */}
       <div className="flex items-center gap-2 overflow-x-auto scrollbar-none text-xs font-mono">
         {alerts.map((a) => {
-          const isBuy = a.direction.includes("BUY");
-          const isAMD = a.patternType === "AMD_ACCUMULATION_DISTRIBUTION";
+          const isCE = a.direction.includes("CE") || a.direction.includes("BUY");
+          const patternLabel =
+            a.patternType === "VAL_SWEEP_REVERSAL"
+              ? "VAL Sweep"
+              : a.patternType === "VAH_REJECTION_REVERSAL"
+              ? "VAH Rejection"
+              : a.patternType === "POC_RETEST_BOUNCE"
+              ? "POC Bounce"
+              : a.patternType === "POC_RETEST_REJECTION"
+              ? "POC Rejection"
+              : "VA Expansion";
 
           return (
             <button
@@ -52,20 +61,20 @@ export const ActiveAlertsRibbon: React.FC<ActiveAlertsRibbonProps> = ({
                   {a.symbol}
                 </span>
                 <span
-                  className={`px-1 rounded text-[10px] ${
-                    isBuy ? "text-bull bg-bull/10" : "text-bear bg-bear/10"
+                  className={`px-1.5 py-0.2 rounded text-[10px] font-extrabold ${
+                    isCE ? "text-bull bg-bull/10 border border-bull/30" : "text-bear bg-bear/10 border border-bear/30"
                   }`}
                 >
-                  {isBuy ? "BUY" : "SELL"}
+                  {a.direction.includes("CE") ? "BUY CE" : a.direction.includes("PE") ? "BUY PE" : a.direction}
                 </span>
               </div>
 
               <span className="text-[11px] text-terminal-muted hidden sm:inline">
-                {isAMD ? "AMD Judas Sweep" : "4H Break & Retest"}
+                {patternLabel}
               </span>
 
               <span className="text-[10px] text-cyan-400 font-semibold font-mono">
-                @{a.suggestedEntry}
+                @₹{a.suggestedEntry}
               </span>
 
               <ChevronRight className="w-3 h-3 text-terminal-muted group-hover:text-accent group-hover:translate-x-0.5 transition-all" />

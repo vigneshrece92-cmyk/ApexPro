@@ -1,13 +1,14 @@
 import { NextResponse } from "next/server";
 import {
-  detect4HBreakoutRetest,
-  detectAMDSetup,
-  detectFVGMitigation,
-  detectSilverBullet,
+  detectVALSweepReversal,
+  detectVAHRejectionReversal,
+  detectPOCRetestBounce,
+  detectPOCRetestRejection,
+  detectVAExpansionBreakout,
   generateDynamicLiveAlert,
   getInitialInstitutionalAlerts,
 } from "@/lib/alertDetectors";
-import { AssetSymbol, Candle, InstitutionalAlert, Quote } from "@/lib/types";
+import { AssetSymbol, Candle, InstitutionalAlert, Quote, AlertPatternType } from "@/lib/types";
 import { INITIAL_QUOTES } from "@/lib/defaultData";
 
 // Ensure Node TLS allows Yahoo Finance fetch across environments
@@ -22,20 +23,20 @@ export async function GET() {
   try {
     const alertMap = new Map<string, InstitutionalAlert>();
 
-    // Dedicated Indian Options & MCX Commodities Config
+    // Dedicated Indian Options & MCX Commodities Config with exact MCX parity multipliers
     const indianAssetConfigs: {
       symbol: AssetSymbol;
       name: string;
       ySym: string;
-      pattern: any;
+      pattern: AlertPatternType;
       multiplier?: number;
     }[] = [
-      { symbol: "NIFTY", name: "NIFTY 50", ySym: "^NSEI", pattern: "4H_BREAKOUT_RETEST" },
-      { symbol: "BANKNIFTY", name: "BANK NIFTY", ySym: "^NSEBANK", pattern: "AMD_ACCUMULATION_DISTRIBUTION" },
-      { symbol: "CRUDEOIL", name: "CRUDE OIL (MCX)", ySym: "CL=F", pattern: "FVG_MITIGATION", multiplier: 83.8 },
-      { symbol: "NATURALGAS", name: "NATURAL GAS (MCX)", ySym: "NG=F", pattern: "4H_BREAKOUT_RETEST", multiplier: 83.8 },
-      { symbol: "SENSEX", name: "BSE SENSEX", ySym: "^BSESN", pattern: "AMD_ACCUMULATION_DISTRIBUTION" },
-      { symbol: "FINNIFTY", name: "FIN NIFTY", ySym: "NIFTY_FIN_SERVICE.NS", pattern: "ICT_SILVER_BULLET" },
+      { symbol: "NIFTY", name: "NIFTY 50", ySym: "^NSEI", pattern: "VAL_SWEEP_REVERSAL" },
+      { symbol: "BANKNIFTY", name: "BANK NIFTY", ySym: "^NSEBANK", pattern: "POC_RETEST_BOUNCE" },
+      { symbol: "CRUDEOIL", name: "CRUDE OIL (MCX)", ySym: "CL=F", pattern: "VAH_REJECTION_REVERSAL", multiplier: 96.85 },
+      { symbol: "NATURALGAS", name: "NATURAL GAS (MCX)", ySym: "NG=F", pattern: "VAL_SWEEP_REVERSAL", multiplier: 87.20 },
+      { symbol: "SENSEX", name: "BSE SENSEX", ySym: "^BSESN", pattern: "VA_EXPANSION_BREAKOUT" },
+      { symbol: "FINNIFTY", name: "FIN NIFTY", ySym: "NIFTY_FIN_SERVICE.NS", pattern: "POC_RETEST_REJECTION" },
     ];
 
     await Promise.all(
@@ -73,6 +74,10 @@ export async function GET() {
               const v = quotes.volume?.[i] || 0;
 
               if (o != null && c != null && h != null && l != null) {
+                // Filter out zero-volume flat bar Yahoo metadata artifacts
+                if (v === 0 && Math.abs(h - l) < 0.0001 && i === times.length - 1) {
+                  continue;
+                }
                 assetCandles.push({
                   time: times[i],
                   open: +(o * mult).toFixed(precision),
@@ -95,16 +100,18 @@ export async function GET() {
               lastUpdate: Date.now(),
             };
 
-            // Run institutional detectors
+            // Run institutional Volume Profile (PAVP) detectors
             let detectedAlert: InstitutionalAlert | null = null;
-            if (item.pattern === "AMD_ACCUMULATION_DISTRIBUTION") {
-              detectedAlert = detectAMDSetup(item.symbol, item.name, assetCandles, precision);
-            } else if (item.pattern === "FVG_MITIGATION") {
-              detectedAlert = detectFVGMitigation(item.symbol, item.name, assetCandles, precision);
-            } else if (item.pattern === "4H_BREAKOUT_RETEST") {
-              detectedAlert = detect4HBreakoutRetest(item.symbol, item.name, assetCandles, precision);
-            } else if (item.pattern === "ICT_SILVER_BULLET") {
-              detectedAlert = detectSilverBullet(item.symbol, item.name, assetCandles, precision);
+            if (item.pattern === "VAL_SWEEP_REVERSAL") {
+              detectedAlert = detectVALSweepReversal(item.symbol, item.name, assetCandles, precision);
+            } else if (item.pattern === "VAH_REJECTION_REVERSAL") {
+              detectedAlert = detectVAHRejectionReversal(item.symbol, item.name, assetCandles, precision);
+            } else if (item.pattern === "POC_RETEST_BOUNCE") {
+              detectedAlert = detectPOCRetestBounce(item.symbol, item.name, assetCandles, precision);
+            } else if (item.pattern === "POC_RETEST_REJECTION") {
+              detectedAlert = detectPOCRetestRejection(item.symbol, item.name, assetCandles, precision);
+            } else if (item.pattern === "VA_EXPANSION_BREAKOUT") {
+              detectedAlert = detectVAExpansionBreakout(item.symbol, item.name, assetCandles, precision);
             }
 
             if (detectedAlert) {

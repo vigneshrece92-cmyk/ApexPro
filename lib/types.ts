@@ -329,11 +329,11 @@ export interface PropFirmProfile {
 }
 
 export type AlertPatternType =
-  | "4H_BREAKOUT_RETEST"
-  | "AMD_ACCUMULATION_DISTRIBUTION"
-  | "FVG_MITIGATION"
-  | "LIQUIDITY_SWEEP_CHOCH"
-  | "ICT_SILVER_BULLET";
+  | "VAL_SWEEP_REVERSAL"
+  | "VAH_REJECTION_REVERSAL"
+  | "POC_RETEST_BOUNCE"
+  | "POC_RETEST_REJECTION"
+  | "VA_EXPANSION_BREAKOUT";
 
 export type AlertStatus = "CONFIRMED" | "RETESTING" | "TRIGGERED";
 
@@ -341,15 +341,17 @@ export interface InstitutionalAlert {
   id: string;
   symbol: AssetSymbol;
   assetName: string;
-  timeframe: "4h" | "1h" | "15m";
+  timeframe: "4h" | "1h" | "15m" | "5m";
   patternType: AlertPatternType;
   title: string;
-  direction: "BUY" | "STRONG BUY" | "SELL" | "STRONG SELL";
+  direction: "BUY CE" | "BUY PE" | "STRONG BUY CE" | "STRONG BUY PE" | "BUY" | "SELL" | "STRONG BUY" | "STRONG SELL";
   status: AlertStatus;
   priceAtAlert: number;
-  breakoutLevel?: number;
-  retestZone?: { min: number; max: number };
-  amdPhase?: "Accumulation" | "Manipulation (Judas Swing)" | "Distribution Expansion";
+  vahPrice?: number;
+  valPrice?: number;
+  pocPrice?: number;
+  vwcbSpike?: boolean;
+  optionStrikeSuggestion?: string;
   suggestedEntry: number;
   stopLoss: number;
   takeProfit1: number;
@@ -362,10 +364,8 @@ export interface InstitutionalAlert {
   timestamp: number;
   timeAgo: string;
   candles: Candle[];
+  levelPrice?: number;
+  retestStatus?: string;
   breakoutCandleIndex?: number;
   retestCandleIndex?: number;
-  manipulationCandleIndex?: number;
-  accumulationRange?: { high: number; low: number };
-  manipulationExtreme?: number;
-  retestStatus?: "Retest in Progress (Awaiting Bounce)" | "Retest Confirmed (Proper Entry)" | "Pending Retest";
 }

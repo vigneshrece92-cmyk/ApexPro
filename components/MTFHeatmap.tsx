@@ -79,44 +79,44 @@ export const MTFHeatmap: React.FC<MTFHeatmapProps> = ({
           <div className="p-1.5 rounded bg-accent/10 border border-accent/30 text-accent">
             <Layers className="w-4 h-4" />
           </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h2 className="text-xs font-bold uppercase tracking-wider text-white">
-                Multi-Timeframe (MTF) SMC Confluence Matrix
-              </h2>
-              <span className="w-1.5 h-1.5 rounded-full bg-bull animate-pulse" />
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-xs font-bold uppercase tracking-wider text-white">
+                  Multi-Timeframe (MTF) Volume Profile (PAVP) Confluence Matrix
+                </h2>
+                <span className="w-1.5 h-1.5 rounded-full bg-bull animate-pulse" />
+              </div>
+              <p className="text-[10px] text-terminal-muted">
+                Pivot-anchored Volume Profile (VAH, VAL, POC) alignment across 15M, 1H, 4H & Daily
+              </p>
             </div>
-            <p className="text-[10px] text-terminal-muted">
-              Institutional market structure alignment across 15M, 1H, 4H & Daily
-            </p>
+          </div>
+
+          <div className="flex items-center gap-2 text-[10px] font-mono text-terminal-muted">
+            <span className="flex items-center gap-1">
+              <span className="w-2 h-2 rounded bg-bull/30 border border-bull/60"></span> Bullish Alignment
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="w-2 h-2 rounded bg-bear/30 border border-bear/60"></span> Bearish Alignment
+            </span>
           </div>
         </div>
 
-        <div className="flex items-center gap-2 text-[10px] font-mono text-terminal-muted">
-          <span className="flex items-center gap-1">
-            <span className="w-2 h-2 rounded bg-bull/30 border border-bull/60"></span> Bullish Alignment
-          </span>
-          <span className="flex items-center gap-1">
-            <span className="w-2 h-2 rounded bg-bear/30 border border-bear/60"></span> Bearish Alignment
-          </span>
-        </div>
-      </div>
-
-      {/* Table Container */}
-      <div className="overflow-x-auto">
-        <table className="w-full text-left text-xs font-mono border-collapse">
-          <thead>
-            <tr className="bg-[#080B11] border-b border-terminal-border/80 text-[10px] text-terminal-muted uppercase">
-              <th className="py-2.5 px-3 font-semibold">Asset Instrument</th>
-              <th className="py-2.5 px-2 font-semibold">Live Price</th>
-              <th className="py-2.5 px-2 font-semibold">15M (Internal Flow)</th>
-              <th className="py-2.5 px-2 font-semibold">1H (Order Block / Zone)</th>
-              <th className="py-2.5 px-2 font-semibold">4H (Market Structure)</th>
-              <th className="py-2.5 px-2 font-semibold">Daily (Macro Trend)</th>
-              <th className="py-2.5 px-2 font-semibold">Confluence</th>
-              <th className="py-2.5 px-3 text-right font-semibold">Action</th>
-            </tr>
-          </thead>
+        {/* Table Container */}
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs font-mono border-collapse">
+            <thead>
+              <tr className="bg-[#080B11] border-b border-terminal-border/80 text-[10px] text-terminal-muted uppercase">
+                <th className="py-2.5 px-3 font-semibold">Asset Instrument</th>
+                <th className="py-2.5 px-2 font-semibold">Live Price</th>
+                <th className="py-2.5 px-2 font-semibold">15M (Internal Flow & VAL/VAH)</th>
+                <th className="py-2.5 px-2 font-semibold">1H (POC Value Node)</th>
+                <th className="py-2.5 px-2 font-semibold">4H (Volume Profile Structure)</th>
+                <th className="py-2.5 px-2 font-semibold">Daily (Macro Volume Flow)</th>
+                <th className="py-2.5 px-2 font-semibold">Confluence</th>
+                <th className="py-2.5 px-3 text-right font-semibold">Action</th>
+              </tr>
+            </thead>
           <tbody className="divide-y divide-terminal-border/40">
             {mtfData.map((row) => {
               const isActive = activeSymbol === row.symbol;

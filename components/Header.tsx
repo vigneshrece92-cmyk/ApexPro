@@ -120,7 +120,7 @@ export const Header: React.FC<HeaderProps> = ({
           <div className="hidden lg:flex items-center gap-1.5 text-[11px] pl-2 border-l border-terminal-border/50">
             <span className="text-terminal-muted">CRUDE / GAS RATIO:</span>
             <span className="font-mono font-bold text-amber-400">
-              {((quotes.CRUDEOIL?.bid || 7660) / ((quotes.NATURALGAS?.bid || 258.2) * 10)).toFixed(2)}
+              {((quotes.CRUDEOIL?.bid || 8840) / ((quotes.NATURALGAS?.bid || 271.6) * 10)).toFixed(2)}
             </span>
           </div>
         </div>
@@ -236,11 +236,11 @@ export const Header: React.FC<HeaderProps> = ({
           {onOpenAlertsHub && (
             <button
               onClick={onOpenAlertsHub}
-              className="relative flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1.5 text-xs font-semibold rounded-md bg-gradient-to-r from-amber-500/20 to-orange-500/20 hover:from-amber-500/30 hover:to-orange-500/30 text-amber-300 border border-amber-500/40 transition-all shadow-md shadow-amber-500/10"
-              title="4H Breakout/Retest & AMD Radar Alerts"
+              className="relative flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1.5 text-xs font-semibold rounded-md bg-gradient-to-r from-purple-500/20 to-blue-500/20 hover:from-purple-500/30 hover:to-blue-500/30 text-purple-300 border border-purple-500/40 transition-all shadow-md shadow-purple-500/10"
+              title="Pivot-Anchored Volume Profile (PAVP - VAH / VAL / POC) Alerts"
             >
-              <Bell className="w-3.5 h-3.5 text-amber-400 animate-bounce" />
-              <span className="hidden sm:inline">4H Alerts</span>
+              <Bell className="w-3.5 h-3.5 text-purple-400 animate-bounce" />
+              <span className="hidden sm:inline">PAVP Alerts</span>
               {activeAlertCount !== undefined && activeAlertCount > 0 && (
                 <span className="px-1.5 py-0.2 text-[10px] font-mono rounded bg-amber-400 text-black font-black">
                   {activeAlertCount}

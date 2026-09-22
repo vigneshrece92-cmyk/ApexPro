@@ -355,7 +355,7 @@ export function computeTechnicals(candles: Candle[], precision = 2): TechnicalIn
  * - PDH (Previous Day High) & PDL (Previous Day Low): Major institutional liquidity extremes
  * - Daily Open (DO): The true day baseline (above DO = premium/longs, below DO = discount/shorts)
  * - ORB (Opening Range Breakout): First session opening range high, low, and 50% midpoint
- * - Asia High & Low: Asian session consolidation range swept by London Judas swings
+ * - Asia High & Low: Asian session consolidation range swept by institutional liquidity
  */
 export function calculateSessionLevels(
   candles: Candle[],

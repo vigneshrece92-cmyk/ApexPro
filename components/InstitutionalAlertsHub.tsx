@@ -31,7 +31,13 @@ interface InstitutionalAlertsHubProps {
   onOpenDemoPanelWithAlert?: (alert: InstitutionalAlert) => void;
 }
 
-type FilterCategory = "all" | "4H_BREAKOUT_RETEST" | "AMD_ACCUMULATION_DISTRIBUTION" | "FVG_MITIGATION" | "ICT_SILVER_BULLET";
+type FilterCategory =
+  | "all"
+  | "VAL_SWEEP_REVERSAL"
+  | "VAH_REJECTION_REVERSAL"
+  | "POC_RETEST_BOUNCE"
+  | "POC_RETEST_REJECTION"
+  | "VA_EXPANSION_BREAKOUT";
 
 // Web Audio API chime generator (zero audio file dependencies)
 function playAlertChime() {
@@ -114,17 +120,16 @@ export const InstitutionalAlertsHub: React.FC<InstitutionalAlertsHubProps> = ({
   });
 
   const handleCopyAlertScript = (alert: InstitutionalAlert) => {
-    const isBuy = alert.direction.includes("BUY");
-    const script = `// Apex Pro Indian Options & MCX Order Setup - ${alert.symbol}
+    const script = `// Apex Pro Indian Options & MCX PAVP Setup - ${alert.symbol}
 // Setup: ${alert.title}
-${isBuy ? "BUY" : "SELL"} LIMIT ${alert.symbol}
-Entry: ${alert.suggestedEntry}
-SL: ${alert.stopLoss}
-TP1: ${alert.takeProfit1}
-TP2: ${alert.takeProfit2}
-${alert.takeProfit3 ? `TP3: ${alert.takeProfit3}` : ""}
+Direction: ${alert.direction}
+Option Strike: ${alert.optionStrikeSuggestion || "ATM"}
+Entry: ₹${alert.suggestedEntry}
+SL: ₹${alert.stopLoss}
+TP1: ₹${alert.takeProfit1}
+TP2: ₹${alert.takeProfit2}
+${alert.valPrice ? `VAL: ₹${alert.valPrice} | POC: ₹${alert.pocPrice} | VAH: ₹${alert.vahPrice}` : ""}
 R:R: ${alert.riskRewardRatio}
-Timeframe: 4H
 Confidence: ${alert.confidenceScore}%`;
 
     navigator.clipboard.writeText(script);
@@ -146,14 +151,14 @@ Confidence: ${alert.confidenceScore}%`;
             <div>
               <div className="flex items-center gap-2">
                 <h2 className="text-sm font-bold text-white tracking-wide">
-                  Institutional Alerts Hub & 4H Radar
+                  Pivot-Anchored Volume Profile (PAVP) Alerts Hub
                 </h2>
                 <span className="px-2 py-0.5 text-[10px] font-mono bg-cyan-500/20 text-cyan-300 rounded border border-cyan-500/40">
-                  {alerts.length} ACTIVE SIGNALS
+                  {alerts.length} PAVP SIGNALS
                 </span>
               </div>
               <p className="text-[11px] text-terminal-muted">
-                4H Breakout & Retest Confirmations • AMD Judas Swings • Visual Chart Snapshots
+                VAL Liquidity Sweeps • POC High-Volume Retests • VAH Mean Reversions • Value Area Expansions
               </p>
             </div>
           </div>
@@ -207,44 +212,54 @@ Confidence: ${alert.confidenceScore}%`;
             All Alerts ({alerts.length})
           </button>
           <button
-            onClick={() => setFilter("4H_BREAKOUT_RETEST")}
+            onClick={() => setFilter("VAL_SWEEP_REVERSAL")}
             className={`px-3 py-1 rounded transition-all shrink-0 flex items-center gap-1.5 ${
-              filter === "4H_BREAKOUT_RETEST"
+              filter === "VAL_SWEEP_REVERSAL"
                 ? "bg-cyan-500 text-black font-bold"
                 : "text-terminal-muted hover:text-white bg-terminal-bg border border-terminal-border"
             }`}
           >
-            <span>4H Breakout & Retest</span>
+            <span>VAL Sweep (BUY CE)</span>
           </button>
           <button
-            onClick={() => setFilter("AMD_ACCUMULATION_DISTRIBUTION")}
+            onClick={() => setFilter("VAH_REJECTION_REVERSAL")}
             className={`px-3 py-1 rounded transition-all shrink-0 flex items-center gap-1.5 ${
-              filter === "AMD_ACCUMULATION_DISTRIBUTION"
+              filter === "VAH_REJECTION_REVERSAL"
                 ? "bg-purple-500 text-white font-bold"
                 : "text-terminal-muted hover:text-white bg-terminal-bg border border-terminal-border"
             }`}
           >
-            <span>AMD / Judas Swing (PO3)</span>
+            <span>VAH Rejection (BUY PE)</span>
           </button>
           <button
-            onClick={() => setFilter("FVG_MITIGATION")}
+            onClick={() => setFilter("POC_RETEST_BOUNCE")}
             className={`px-3 py-1 rounded transition-all shrink-0 flex items-center gap-1.5 ${
-              filter === "FVG_MITIGATION"
+              filter === "POC_RETEST_BOUNCE"
                 ? "bg-emerald-500 text-black font-bold"
                 : "text-terminal-muted hover:text-white bg-terminal-bg border border-terminal-border"
             }`}
           >
-            <span>FVG Mitigation</span>
+            <span>POC Bounce (BUY CE)</span>
           </button>
           <button
-            onClick={() => setFilter("ICT_SILVER_BULLET")}
+            onClick={() => setFilter("POC_RETEST_REJECTION")}
             className={`px-3 py-1 rounded transition-all shrink-0 flex items-center gap-1.5 ${
-              filter === "ICT_SILVER_BULLET"
-                ? "bg-gradient-to-r from-amber-400 to-yellow-500 text-black font-black shadow-md shadow-amber-500/20"
+              filter === "POC_RETEST_REJECTION"
+                ? "bg-rose-500 text-white font-bold"
                 : "text-terminal-muted hover:text-white bg-terminal-bg border border-terminal-border"
             }`}
           >
-            <span>🎯 ICT Silver Bullet</span>
+            <span>POC Rejection (BUY PE)</span>
+          </button>
+          <button
+            onClick={() => setFilter("VA_EXPANSION_BREAKOUT")}
+            className={`px-3 py-1 rounded transition-all shrink-0 flex items-center gap-1.5 ${
+              filter === "VA_EXPANSION_BREAKOUT"
+                ? "bg-amber-400 text-black font-black shadow-md shadow-amber-500/20"
+                : "text-terminal-muted hover:text-white bg-terminal-bg border border-terminal-border"
+            }`}
+          >
+            <span>⚡ VA Expansion</span>
           </button>
         </div>
 
@@ -255,7 +270,7 @@ Confidence: ${alert.confidenceScore}%`;
               <Zap className="w-8 h-8 text-cyan-400 mx-auto mb-2 opacity-50" />
               <p className="text-sm font-semibold text-white">No active alerts in this category</p>
               <p className="text-xs text-terminal-muted mt-1">
-                4H scanner is monitoring live candle closes and structure shifts.
+                PAVP scanner is monitoring live 15M/1H Volume Profiles and high-volume auction nodes.
               </p>
             </div>
           ) : (
@@ -308,19 +323,19 @@ Confidence: ${alert.confidenceScore}%`;
                   <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-xs font-mono bg-terminal-bg p-2.5 rounded-lg border border-terminal-border">
                     <div className="p-1.5 rounded bg-terminal-card border border-terminal-border/80">
                       <span className="text-[9px] text-terminal-muted uppercase block">Entry</span>
-                      <span className="font-bold text-cyan-300">{alert.suggestedEntry}</span>
+                      <span className="font-bold text-cyan-300">₹{alert.suggestedEntry}</span>
                     </div>
                     <div className="p-1.5 rounded bg-terminal-card border border-terminal-border/80">
                       <span className="text-[9px] text-terminal-muted uppercase block">Stop Loss</span>
-                      <span className="font-bold text-bear">{alert.stopLoss}</span>
+                      <span className="font-bold text-bear">₹{alert.stopLoss}</span>
                     </div>
                     <div className="p-1.5 rounded bg-terminal-card border border-terminal-border/80">
                       <span className="text-[9px] text-terminal-muted uppercase block">TP1 (Safe)</span>
-                      <span className="font-bold text-bull">{alert.takeProfit1}</span>
+                      <span className="font-bold text-bull">₹{alert.takeProfit1}</span>
                     </div>
                     <div className="p-1.5 rounded bg-terminal-card border border-terminal-border/80">
                       <span className="text-[9px] text-terminal-muted uppercase block">TP2 (Runner)</span>
-                      <span className="font-bold text-bull">{alert.takeProfit2}</span>
+                      <span className="font-bold text-bull">₹{alert.takeProfit2}</span>
                     </div>
                     <div className="p-1.5 rounded bg-terminal-card border border-terminal-border/80 col-span-2 sm:col-span-1">
                       <span className="text-[9px] text-terminal-muted uppercase block">Risk : Reward</span>
@@ -328,38 +343,45 @@ Confidence: ${alert.confidenceScore}%`;
                     </div>
                   </div>
 
-                  {/* PO3 / Retest Structural Metrics Pills */}
-                  {(alert.retestStatus || alert.amdPhase) && (
-                    <div className="flex flex-wrap items-center gap-2 text-[11px] font-mono">
-                      {alert.retestStatus && (
-                        <div className="px-2 py-0.5 rounded bg-cyan-950/40 text-cyan-300 border border-cyan-500/30 flex items-center gap-1.5">
-                          <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse"></span>
-                          <span>{alert.retestStatus}</span>
-                        </div>
-                      )}
-                      {alert.amdPhase && (
-                        <div className="px-2 py-0.5 rounded bg-purple-950/40 text-purple-300 border border-purple-500/30 flex items-center gap-1.5">
-                          <span className="w-1.5 h-1.5 rounded-full bg-purple-400"></span>
-                          <span>Phase: {alert.amdPhase}</span>
-                        </div>
-                      )}
-                      {alert.accumulationRange && (
-                        <div className="px-2 py-0.5 rounded bg-terminal-bg text-gray-300 border border-terminal-border text-[10px]">
-                          Range [A]: {alert.accumulationRange.low} – {alert.accumulationRange.high}
-                        </div>
-                      )}
-                      {alert.manipulationExtreme && (
-                        <div className="px-2 py-0.5 rounded bg-pink-950/40 text-pink-300 border border-pink-500/30 text-[10px]">
-                          Judas Wick [M]: {alert.manipulationExtreme}
-                        </div>
-                      )}
-                    </div>
-                  )}
+                  {/* Volume Profile Structural Metrics & Strike Pills */}
+                  <div className="flex flex-wrap items-center gap-2 text-[11px] font-mono">
+                    {alert.retestStatus && (
+                      <div className="px-2 py-0.5 rounded bg-cyan-950/40 text-cyan-300 border border-cyan-500/30 flex items-center gap-1.5">
+                        <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse"></span>
+                        <span>{alert.retestStatus}</span>
+                      </div>
+                    )}
+                    {alert.valPrice != null && (
+                      <div className="px-2 py-0.5 rounded bg-blue-950/40 text-blue-300 border border-blue-500/30 text-[10px]">
+                        VAL: ₹{alert.valPrice}
+                      </div>
+                    )}
+                    {alert.pocPrice != null && (
+                      <div className="px-2 py-0.5 rounded bg-red-950/40 text-red-300 border border-red-500/30 text-[10px] font-bold">
+                        POC: ₹{alert.pocPrice}
+                      </div>
+                    )}
+                    {alert.vahPrice != null && (
+                      <div className="px-2 py-0.5 rounded bg-blue-950/40 text-blue-300 border border-blue-500/30 text-[10px]">
+                        VAH: ₹{alert.vahPrice}
+                      </div>
+                    )}
+                    {alert.optionStrikeSuggestion && (
+                      <div className="px-2 py-0.5 rounded bg-emerald-950/40 text-emerald-300 border border-emerald-500/30 text-[10px] font-bold">
+                        Strike: {alert.optionStrikeSuggestion}
+                      </div>
+                    )}
+                    {alert.vwcbSpike && (
+                      <div className="px-2 py-0.5 rounded bg-amber-950/40 text-amber-300 border border-amber-500/30 text-[10px]">
+                        ⚡ VWCB Spike
+                      </div>
+                    )}
+                  </div>
 
                   {/* Reasoning & Invalidation */}
                   <div className="space-y-1.5 text-xs">
                     <p className="text-gray-300 text-[11px] leading-relaxed bg-[#0B0F19] p-2.5 rounded border border-terminal-border/50">
-                      <strong className="text-cyan-300">Institutional Mechanics:</strong> {alert.reasoning}
+                      <strong className="text-cyan-300">PAVP Mechanics:</strong> {alert.reasoning}
                     </p>
                     <div className="flex items-center justify-between text-[10px] text-gray-400 px-1">
                       <span><strong>Invalidation:</strong> {alert.invalidationCriteria}</span>
@@ -376,7 +398,7 @@ Confidence: ${alert.confidenceScore}%`;
                       className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-cyan-600/20 hover:bg-cyan-600/40 text-cyan-300 hover:text-white border border-cyan-500/40 text-xs font-semibold transition-all"
                     >
                       <ExternalLink className="w-3.5 h-3.5" />
-                      <span>Load 4H Chart</span>
+                      <span>Load Chart & PAVP</span>
                     </button>
 
                     {(onOpenDemoPanelWithAlert || onOpenMT5PanelWithAlert) && (
