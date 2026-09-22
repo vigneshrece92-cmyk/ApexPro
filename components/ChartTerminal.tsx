@@ -89,6 +89,13 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
     return detectChartSignals(candles, volumeProfile, quote.pipPrecision);
   }, [candles, volumeProfile, quote.pipPrecision]);
 
+  const candlesSignature = React.useMemo(() => {
+    if (!candles || candles.length === 0) return "empty";
+    const first = candles[0];
+    const last = candles[candles.length - 1];
+    return `${candles.length}_${first.time}_${last.time}_${last.close}`;
+  }, [candles]);
+
   // Mount TradingView Lightweight Charts if in "smart" mode
   useEffect(() => {
     if (chartMode !== "smart" || !chartContainerRef.current) return;
@@ -104,40 +111,48 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
         height: chartContainerRef.current.clientHeight || 460,
         layout: {
           background: { type: lwc.ColorType.Solid, color: "#0B0E14" },
-          textColor: "#8A99AD",
+          textColor: "#94A3B8",
           fontSize: 11,
           fontFamily: "var(--font-mono), monospace",
         },
         grid: {
-          vertLines: { color: "rgba(30, 38, 56, 0.3)" },
-          horzLines: { color: "rgba(30, 38, 56, 0.3)" },
+          vertLines: { color: "rgba(255, 255, 255, 0.03)" },
+          horzLines: { color: "rgba(255, 255, 255, 0.03)" },
         },
         crosshair: {
           mode: lwc.CrosshairMode.Normal,
-          vertLine: { color: "#38BDF8", width: 1, style: lwc.LineStyle.Dashed },
-          horzLine: { color: "#38BDF8", width: 1, style: lwc.LineStyle.Dashed },
+          vertLine: { color: "#475569", width: 1, style: lwc.LineStyle.Dashed },
+          horzLine: { color: "#475569", width: 1, style: lwc.LineStyle.Dashed },
         },
         timeScale: {
-          borderColor: "#1E2638",
+          borderColor: "rgba(255, 255, 255, 0.08)",
           timeVisible: true,
           secondsVisible: false,
         },
         rightPriceScale: {
-          borderColor: "#1E2638",
-          scaleMargins: { top: 0.12, bottom: 0.15 },
+          borderColor: "rgba(255, 255, 255, 0.08)",
+          scaleMargins: { top: 0.10, bottom: 0.12 },
+        },
+        watermark: {
+          visible: true,
+          fontSize: 40,
+          horzAlign: "center",
+          vertAlign: "center",
+          color: "rgba(255, 255, 255, 0.035)",
+          text: `${activeSymbol}  ${timeframe.toUpperCase()}`,
         },
       });
 
       chartInstanceRef.current = chart;
 
-      // Pure clean candlesticks
+      // Institutional Candlestick Palette (TradingView Emerald Bull & Crimson Bear)
       const candleSeries = chart.addCandlestickSeries({
-        upColor: "#00E676",
-        downColor: "#FF3B30",
-        borderUpColor: "#00E676",
-        borderDownColor: "#FF3B30",
-        wickUpColor: "#00E676",
-        wickDownColor: "#FF3B30",
+        upColor: "#089981",
+        downColor: "#F23645",
+        borderUpColor: "#089981",
+        borderDownColor: "#F23645",
+        wickUpColor: "#089981",
+        wickDownColor: "#F23645",
       });
 
       candleSeriesRef.current = candleSeries;
@@ -323,7 +338,7 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
     chartMode,
     activeSymbol,
     timeframe,
-    candles.length,
+    candlesSignature,
     showEMA,
     showSR,
     showFib,
@@ -341,33 +356,72 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
   useEffect(() => {
     if (chartMode !== "smart") return;
 
+    let tfSec = 300; // 5m default
+    if (timeframe === "1m") tfSec = 60;
+    else if (timeframe === "5m") tfSec = 300;
+    else if (timeframe === "15m") tfSec = 900;
+    else if (timeframe === "1h") tfSec = 3600;
+    else if (timeframe === "4h") tfSec = 14400;
+    else if (timeframe === "1d") tfSec = 86400;
+
     const updateLiveTick = (liveBid: number) => {
       if (!candleSeriesRef.current || !lastCandleRef.current || !liveBid || isNaN(liveBid)) return;
 
       const last = lastCandleRef.current;
-      const newHigh = Math.max(last.high, liveBid);
-      const newLow = Math.min(last.low, liveBid);
+      const nowSec = Math.floor(Date.now() / 1000);
+      const currentBucketTime = Math.floor(nowSec / tfSec) * tfSec;
+
+      // Single-tick delta clamp: prevent abnormal price gap from stretching a candle into a cliff
+      const currentClose = last.close;
+      const maxDelta = quote.pipPrecision === 2 ? 2.5 : 0.0025;
+      let safeBid = liveBid;
+      if (Math.abs(liveBid - currentClose) > maxDelta * 2) {
+        safeBid = +(currentClose + Math.sign(liveBid - currentClose) * maxDelta).toFixed(quote.pipPrecision);
+      }
+
+      // If timeframe period has rolled over, cleanly start a new candle!
+      if (typeof last.time === "number" && currentBucketTime > last.time) {
+        const newCandle = {
+          time: currentBucketTime as any,
+          open: currentClose,
+          high: Math.max(currentClose, safeBid),
+          low: Math.min(currentClose, safeBid),
+          close: safeBid,
+        };
+        try {
+          candleSeriesRef.current.update(newCandle);
+          lastCandleRef.current = newCandle;
+          if (livePriceLineRef.current) {
+            livePriceLineRef.current.applyOptions({
+              price: safeBid,
+              title: `LIVE BID ${safeBid.toFixed(quote.pipPrecision)}`,
+            });
+          }
+        } catch {
+          // ignore update glitch during chart rebuild
+        }
+        return;
+      }
+
+      // Otherwise update the active candle
+      const newHigh = Math.max(last.high, safeBid);
+      const newLow = Math.min(last.low, safeBid);
       const updatedCandle = {
         time: last.time as any,
         open: last.open,
         high: newHigh,
         low: newLow,
-        close: liveBid,
+        close: safeBid,
       };
 
       try {
         candleSeriesRef.current.update(updatedCandle);
-        lastCandleRef.current = {
-          ...last,
-          high: newHigh,
-          low: newLow,
-          close: liveBid,
-        };
+        lastCandleRef.current = updatedCandle;
 
         if (livePriceLineRef.current) {
           livePriceLineRef.current.applyOptions({
-            price: liveBid,
-            title: `LIVE BID ${liveBid.toFixed(quote.pipPrecision)}`,
+            price: safeBid,
+            title: `LIVE BID ${safeBid.toFixed(quote.pipPrecision)}`,
           });
         }
       } catch {
@@ -383,13 +437,13 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
     const tickInterval = setInterval(() => {
       if (!quote.bid) return;
       const pipDelta = quote.pipPrecision === 2 ? 0.04 : 0.00004;
-      const randomShift = (Math.random() - 0.49) * pipDelta * 2.5;
+      const randomShift = (Math.random() - 0.49) * pipDelta * 2.0;
       const microBid = +(quote.bid + randomShift).toFixed(quote.pipPrecision);
       updateLiveTick(microBid);
     }, 1200);
 
     return () => clearInterval(tickInterval);
-  }, [quote.bid, quote.pipPrecision, chartMode]);
+  }, [quote.bid, quote.pipPrecision, chartMode, timeframe]);
 
   const resetOverlays = () => {
     setShowEMA(true);

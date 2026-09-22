@@ -248,6 +248,8 @@ export default function TerminalDashboard() {
 
   // Trigger fetch on symbol or timeframe change
   useEffect(() => {
+    // Instantly generate proportional timeframe candles anchored to current quote so chart switches instantaneously
+    setCandles(generateRealisticCandles(activeSymbol, timeframe, 100, quote.bid));
     fetchMarketData(activeSymbol, timeframe);
 
     // Refresh quotes every 10s

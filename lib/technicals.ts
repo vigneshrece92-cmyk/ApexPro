@@ -705,11 +705,11 @@ export function detectChartSignals(
   let lastLevelType: "VAL" | "VAH" | "POC" | null = null;
 
   // Scan recent candles
-  const startIdx = Math.max(8, candles.length - 100);
+  const startIdx = Math.max(8, candles.length - 80);
 
   for (let i = startIdx; i < candles.length; i++) {
-    // Require at least 10 candles between signals to keep chart ultra-clean and high-probability
-    if (i - lastSignalIdx < 10) continue;
+    // Require at least 18 candles between signals to keep chart pristine and high-probability
+    if (i - lastSignalIdx < 18) continue;
 
     const c = candles[i];
     const prevC = candles[i - 1];
@@ -731,21 +731,21 @@ export function detectChartSignals(
     // 3. Point of Control (POC) Support Rebound -> BUY
     // Price pulls back into POC from above and bounces bullishly
     const isPOCTestFromAbove = prevC.close > poc && c.low <= poc + buffer * 0.5 && c.close >= poc;
-    const isPOCBuy = isPOCTestFromAbove && c.close > c.open && lastLevelType !== "POC" && Math.abs(c.close - val) > buffer * 1.5;
+    const isPOCBuy = isPOCTestFromAbove && c.close > c.open && lastLevelType !== "POC" && Math.abs(c.close - val) > buffer * 2.0;
 
     // 4. Point of Control (POC) Resistance Rejection -> SELL
     // Price pulls back into POC from below and rejects bearishly
     const isPOCTestFromBelow = prevC.close < poc && c.high >= poc - buffer * 0.5 && c.close <= poc;
-    const isPOCSell = isPOCTestFromBelow && c.close < c.open && lastLevelType !== "POC" && Math.abs(c.close - vah) > buffer * 1.5;
+    const isPOCSell = isPOCTestFromBelow && c.close < c.open && lastLevelType !== "POC" && Math.abs(c.close - vah) > buffer * 2.0;
 
     if (isVALBuy && lastSignalType !== "BUY") {
       markers.push({
         time: c.time as any,
         position: "belowBar",
-        color: "#00E676",
+        color: "#089981",
         shape: "arrowUp",
         text: `BUY @ VAL ${c.close.toFixed(precision)}`,
-        size: 1.4,
+        size: 1.3,
       });
       lastSignalType = "BUY";
       lastLevelType = "VAL";
@@ -754,10 +754,10 @@ export function detectChartSignals(
       markers.push({
         time: c.time as any,
         position: "aboveBar",
-        color: "#FF3B30",
+        color: "#F23645",
         shape: "arrowDown",
         text: `SELL @ VAH ${c.close.toFixed(precision)}`,
-        size: 1.4,
+        size: 1.3,
       });
       lastSignalType = "SELL";
       lastLevelType = "VAH";
@@ -769,7 +769,7 @@ export function detectChartSignals(
         color: "#10B981",
         shape: "arrowUp",
         text: `BUY @ POC ${c.close.toFixed(precision)}`,
-        size: 1.2,
+        size: 1.1,
       });
       lastSignalType = "BUY";
       lastLevelType = "POC";
@@ -781,7 +781,7 @@ export function detectChartSignals(
         color: "#F43F5E",
         shape: "arrowDown",
         text: `SELL @ POC ${c.close.toFixed(precision)}`,
-        size: 1.2,
+        size: 1.1,
       });
       lastSignalType = "SELL";
       lastLevelType = "POC";
@@ -789,5 +789,6 @@ export function detectChartSignals(
     }
   }
 
-  return markers;
+  // Strictly limit to the 2 to 3 most recent high-conviction sniper signals
+  return markers.slice(-3);
 }

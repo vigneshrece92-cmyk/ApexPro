@@ -45,18 +45,20 @@ export async function GET(req: NextRequest) {
       fetch("https://api.gold-api.com/price/XAU", {
         headers: { "User-Agent": "Mozilla/5.0" },
         next: { revalidate: 10 },
+        signal: AbortSignal.timeout(3000),
       })
         .then((r) => r.json())
         .catch(() => null),
-      fetch("https://api.binance.com/api/v3/ticker/24hr?symbol=PAXGUSDT", {
+      fetch("https://data-api.binance.vision/api/v3/ticker/24hr?symbol=PAXGUSDT", {
         next: { revalidate: 10 },
+        signal: AbortSignal.timeout(3000),
       })
         .then((r) => r.json())
         .catch(() => null),
       symbol === "XAUUSD"
         ? fetch(
-            `https://api.binance.com/api/v3/klines?symbol=PAXGUSDT&interval=${klineInterval}&limit=${count}`,
-            { next: { revalidate: 15 } }
+            `https://data-api.binance.vision/api/v3/klines?symbol=PAXGUSDT&interval=${klineInterval}&limit=${count}`,
+            { next: { revalidate: 15 }, signal: AbortSignal.timeout(3500) }
           )
             .then((r) => r.json())
             .catch(() => null)
@@ -233,12 +235,17 @@ export async function GET(req: NextRequest) {
     console.warn("Error fetching Yahoo finance data:", e);
   }
 
+  const activeQuote = updatedQuotes[symbol] || INITIAL_QUOTES[symbol] || updatedQuotes.XAUUSD;
+
   // Fallback to realistic candles if no network data was returned
   if (activeCandles.length === 0) {
-    activeCandles = generateRealisticCandles(symbol, timeframe, count);
+    activeCandles = generateRealisticCandles(symbol, timeframe, count, activeQuote.bid);
+  } else if (activeCandles.length > 0) {
+    const last = activeCandles[activeCandles.length - 1];
+    last.close = activeQuote.bid;
+    last.high = Math.max(last.high, activeQuote.bid);
+    last.low = Math.min(last.low, activeQuote.bid);
   }
-
-  const activeQuote = updatedQuotes[symbol] || updatedQuotes.XAUUSD;
 
   return NextResponse.json({
     symbol,

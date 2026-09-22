@@ -16,12 +16,12 @@ export const INITIAL_QUOTES: Record<AssetSymbol, Quote> = {
     symbol: "XAUUSD",
     name: "Gold / US Dollar",
     category: "Commodity",
-    bid: 4363.80,
-    ask: 4364.18,
+    bid: 4348.20,
+    ask: 4348.58,
     spread: 3.8,
-    change24h: -0.28,
-    high24h: 4383.57,
-    low24h: 4359.54,
+    change24h: -0.15,
+    high24h: 4358.50,
+    low24h: 4341.20,
     pipPrecision: 2,
     pipMultiplier: 10,
     lastUpdate: Date.now(),
@@ -366,70 +366,108 @@ export const PROP_FIRM_PROFILES: PropFirmProfile[] = [
   { id: "alpha", name: "Alpha Capital Pro", maxDailyLossPercent: 4, maxTotalLossPercent: 8, profitTargetPercent: 8 },
 ];
 
-// Helper to generate candles anchored directly to the real market swing (e.g. Gold 4356 to 4398)
+// Timeframe-specific ATR / bar volatility configuration
+function getTimeframeVol(symbol: AssetSymbol, timeframe: string): number {
+  const isGold = symbol === "XAUUSD";
+  const isSilver = symbol === "XAGUSD";
+  const isJpy = symbol === "USDJPY";
+  const isFx = symbol === "EURUSD" || symbol === "GBPUSD";
+
+  // Base ATR per timeframe for Gold
+  let goldAtr = 0.85; // 5m default
+  if (timeframe === "1m") goldAtr = 0.35;
+  else if (timeframe === "5m") goldAtr = 0.85;
+  else if (timeframe === "15m") goldAtr = 1.75;
+  else if (timeframe === "1h") goldAtr = 4.20;
+  else if (timeframe === "4h") goldAtr = 9.50;
+  else if (timeframe === "1d") goldAtr = 22.00;
+
+  if (isGold) return goldAtr;
+  if (isSilver) return +(goldAtr * 0.015).toFixed(3);
+  if (isJpy) return +(goldAtr * 0.07).toFixed(3);
+  if (isFx) return +(goldAtr * 0.00035).toFixed(5);
+  return +(goldAtr * 0.02).toFixed(2);
+}
+
+// Helper to generate candles anchored directly to live price with realistic timeframe-proportional ATR
 export function generateRealisticCandles(
   symbol: AssetSymbol,
   timeframe: string,
-  count = 60
+  count = 60,
+  anchorPrice?: number
 ): Candle[] {
   const quote = INITIAL_QUOTES[symbol] || INITIAL_QUOTES.XAUUSD;
-  const high24h = quote.high24h;
-  const low24h = quote.low24h;
-  const currentBid = quote.bid;
-  
-  let stepSec = 60;
-  if (timeframe === "5m") stepSec = 300;
-  if (timeframe === "15m") stepSec = 900;
-  if (timeframe === "1h") stepSec = 3600;
-  if (timeframe === "4h") stepSec = 14400;
-  if (timeframe === "1d") stepSec = 86400;
+  const currentBid = anchorPrice != null && anchorPrice > 0 ? anchorPrice : quote.bid;
+  const precision = quote.pipPrecision;
+  const atr = getTimeframeVol(symbol, timeframe);
+
+  let stepSec = 300; // 5m default
+  if (timeframe === "1m") stepSec = 60;
+  else if (timeframe === "5m") stepSec = 300;
+  else if (timeframe === "15m") stepSec = 900;
+  else if (timeframe === "1h") stepSec = 3600;
+  else if (timeframe === "4h") stepSec = 14400;
+  else if (timeframe === "1d") stepSec = 86400;
 
   const nowSec = Math.floor(Date.now() / 1000);
-  const startTime = nowSec - count * stepSec;
+  const currentBucketTime = Math.floor(nowSec / stepSec) * stepSec;
+  const startTime = currentBucketTime - (count - 1) * stepSec;
+
+  // Build a realistic structural curve ending at currentBid
+  // Model 3 phases across historical bars: Accumulation -> Expansion -> Retest/Current
+  const closes: number[] = [];
+  for (let i = 0; i < count; i++) {
+    const progress = i / (count - 1); // 0 to 1
+    // Sinusoidal swing to create realistic peaks, valleys, and Volume Area nodes
+    const swingFactor =
+      Math.sin((i / count) * Math.PI * 2.2) * (atr * 4.5) +
+      Math.cos((i / count) * Math.PI * 4.4) * (atr * 2.0);
+
+    // Fade swing to 0 near the end so last candle lands exactly at currentBid
+    const target = currentBid + swingFactor * (1 - progress * 0.85);
+    closes.push(target);
+  }
+  // Ensure the final close matches currentBid exactly
+  closes[count - 1] = currentBid;
 
   const candles: Candle[] = [];
-  const range = high24h - low24h;
 
   for (let i = 0; i < count; i++) {
     const time = startTime + i * stepSec;
-    const progress = i / (count - 1); // 0 to 1
-
-    // Model the real recent session: consolidation near low -> impulse rally to high -> pullback to current
-    let targetPrice: number;
-    if (progress < 0.35) {
-      // Accumulation near low
-      targetPrice = low24h + range * 0.15 + (Math.sin(i * 0.8) * range * 0.08);
-    } else if (progress < 0.65) {
-      // Strong impulse rally up to swing high
-      const upProg = (progress - 0.35) / 0.3;
-      targetPrice = low24h + range * (0.15 + upProg * 0.85);
-    } else {
-      // Pullback from high down to current price
-      const downProg = (progress - 0.65) / 0.35;
-      targetPrice = high24h - (high24h - currentBid) * downProg + (Math.sin(i * 0.6) * range * 0.04);
-    }
-
-    const open = +targetPrice.toFixed(quote.pipPrecision);
-    // Deterministic pseudo-random generation based on index to prevent SSR/client hydration mismatch
+    // Deterministic pseudo-random generation to prevent hydration mismatches
     const pr1 = Math.abs(Math.sin(i * 12.9898 + 1.234)) % 1;
     const pr2 = Math.abs(Math.cos(i * 4.8932 + 2.345)) % 1;
     const pr3 = Math.abs(Math.sin(i * 7.1234 + 3.456)) % 1;
-    const noise = (pr1 - 0.48) * range * 0.08;
-    const close = +(open + noise).toFixed(quote.pipPrecision);
-    const high = +(Math.max(open, close) + pr2 * range * 0.05).toFixed(quote.pipPrecision);
-    const low = +(Math.min(open, close) - pr3 * range * 0.05).toFixed(quote.pipPrecision);
-    const volume = Math.floor(pr1 * 400) + 150;
+
+    let open: number;
+    let close: number;
+
+    if (i === 0) {
+      const delta = (pr1 - 0.5) * atr * 0.6;
+      open = +(closes[0] - delta).toFixed(precision);
+      close = +closes[0].toFixed(precision);
+    } else {
+      // Connect previous candle close seamlessly to next open
+      open = candles[i - 1].close;
+      close = +closes[i].toFixed(precision);
+    }
+
+    // For the last candle, make sure body is realistically small (live candle in formation)
+    if (i === count - 1) {
+      const liveBodyOffset = ((pr1 - 0.5) * atr * 0.4);
+      open = +(currentBid - liveBodyOffset).toFixed(precision);
+      close = currentBid;
+    }
+
+    const wickTop = pr2 * atr * 0.45;
+    const wickBottom = pr3 * atr * 0.45;
+    const high = +(Math.max(open, close) + wickTop).toFixed(precision);
+    const low = +(Math.min(open, close) - wickBottom).toFixed(precision);
+    const volume = Math.floor(pr1 * 350) + 120;
 
     candles.push({ time, open, high, low, close, volume });
   }
 
-  // Ensure last candle matches real live quote exactly
-  if (candles.length > 0) {
-    candles[candles.length - 1].open = +(currentBid - (range * 0.02)).toFixed(quote.pipPrecision);
-    candles[candles.length - 1].close = currentBid;
-    candles[candles.length - 1].high = Math.max(currentBid, candles[candles.length - 1].high);
-    candles[candles.length - 1].low = Math.min(currentBid, candles[candles.length - 1].low);
-  }
-
   return candles;
 }
+
