@@ -430,6 +430,7 @@ export default function TerminalDashboard() {
                 activeSymbol={activeSymbol}
                 onSelectSymbol={setActiveSymbol}
                 externalQuotes={allQuotes}
+                alerts={alerts}
               />
             </div>
 

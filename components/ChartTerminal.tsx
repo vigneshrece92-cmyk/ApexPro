@@ -127,10 +127,22 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
   useEffect(() => {
     if (chartMode !== "smart" || !chartContainerRef.current) return;
 
+    let isDisposed = false;
     let chart: any = null;
+    let resizeObserver: ResizeObserver | null = null;
 
     import("lightweight-charts").then((lwc) => {
-      if (!chartContainerRef.current) return;
+      if (isDisposed || !chartContainerRef.current) return;
+
+      // Clean previous chart instance cleanly before mounting new one
+      if (chartInstanceRef.current) {
+        try {
+          chartInstanceRef.current.remove();
+        } catch (e) {
+          console.debug("Previous chart instance remove error:", e);
+        }
+        chartInstanceRef.current = null;
+      }
       chartContainerRef.current.innerHTML = "";
 
       chart = lwc.createChart(chartContainerRef.current, {
@@ -432,26 +444,55 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
         });
       }
 
-      chart.timeScale().fitContent();
+      try {
+        chart.timeScale().fitContent();
+      } catch (e) {
+        console.debug("fitContent error:", e);
+      }
 
-      const handleResize = () => {
-        if (chartContainerRef.current && chart) {
-          chart.applyOptions({
-            width: chartContainerRef.current.clientWidth,
-            height: chartContainerRef.current.clientHeight || 460,
-          });
-        }
-      };
-
-      window.addEventListener("resize", handleResize);
-      return () => {
-        window.removeEventListener("resize", handleResize);
-        if (chart) chart.remove();
-      };
+      if (typeof ResizeObserver !== "undefined" && chartContainerRef.current) {
+        resizeObserver = new ResizeObserver((entries) => {
+          if (isDisposed || !chart) return;
+          for (const entry of entries) {
+            const cr = entry.contentRect;
+            if (cr.width > 0 && cr.height > 0) {
+              try {
+                chart.applyOptions({
+                  width: cr.width,
+                  height: cr.height,
+                });
+              } catch (e) {
+                console.debug("Chart resize error:", e);
+              }
+            }
+          }
+        });
+        resizeObserver.observe(chartContainerRef.current);
+      }
     });
 
     return () => {
-      if (chart) chart.remove();
+      isDisposed = true;
+      if (resizeObserver) {
+        try {
+          resizeObserver.disconnect();
+        } catch {}
+        resizeObserver = null;
+      }
+      if (chart) {
+        try {
+          chart.remove();
+        } catch {}
+        chart = null;
+      }
+      if (chartInstanceRef.current) {
+        try {
+          chartInstanceRef.current.remove();
+        } catch {}
+        chartInstanceRef.current = null;
+      }
+      candleSeriesRef.current = null;
+      livePriceLineRef.current = null;
     };
   }, [
     chartMode,
@@ -492,7 +533,7 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
     else if (timeframe === "1d") tfSec = 86400;
 
     const updateLiveTick = (liveBid: number) => {
-      if (!candleSeriesRef.current || !lastCandleRef.current || !liveBid || isNaN(liveBid)) return;
+      if (!chartInstanceRef.current || !candleSeriesRef.current || !lastCandleRef.current || !liveBid || isNaN(liveBid)) return;
 
       const last = lastCandleRef.current;
       const nowSec = Math.floor(Date.now() / 1000);
