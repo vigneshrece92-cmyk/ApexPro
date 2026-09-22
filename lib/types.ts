@@ -1,4 +1,43 @@
-export type AssetSymbol = "XAUUSD" | "XAGUSD" | "USDJPY" | "GBPUSD" | "EURUSD" | "DXY" | "US10Y";
+export type AssetSymbol =
+  | "NIFTY"
+  | "BANKNIFTY"
+  | "CRUDEOIL"
+  | "NATURALGAS"
+  | "FINNIFTY"
+  | "SENSEX"
+  | "XAUUSD"
+  | "XAGUSD"
+  | "USDJPY"
+  | "GBPUSD"
+  | "EURUSD"
+  | "DXY"
+  | "US10Y";
+
+export type MarketMode = "INDIAN_OPTIONS" | "GLOBAL_FX";
+
+export type OptionType = "CE" | "PE";
+
+export interface OptionContract {
+  symbol: AssetSymbol;
+  strike: number;
+  type: OptionType;
+  expiry: string;
+  spotPrice: number;
+  premiumBid: number;
+  premiumAsk: number;
+  lotSize: number;
+  delta: number;
+  gamma?: number;
+  theta?: number;
+  iv?: number;
+}
+
+export interface OptionChainItem {
+  strike: number;
+  call: OptionContract;
+  put: OptionContract;
+  isATM: boolean;
+}
 
 export type TimeFrame = "1m" | "5m" | "15m" | "1h" | "4h" | "1d";
 
@@ -14,7 +53,7 @@ export interface Candle {
 export interface Quote {
   symbol: AssetSymbol;
   name: string;
-  category: "Commodity" | "Forex" | "Macro";
+  category: "Commodity" | "Forex" | "Macro" | "Indian Index" | "MCX Commodity";
   bid: number;
   ask: number;
   spread: number;
@@ -24,6 +63,54 @@ export interface Quote {
   pipPrecision: number;
   pipMultiplier: number;
   lastUpdate: number;
+  lotSize?: number;
+  strikeStep?: number;
+  currency?: "₹" | "$";
+}
+
+export interface PAVPVolumeRow {
+  price: number;
+  volume: number;
+  isValueArea: boolean;
+  isPOC: boolean;
+}
+
+export interface PivotPoint {
+  index: number;
+  time: number;
+  price: number;
+  type: "high" | "low";
+  pvtLength: number;
+}
+
+export interface PivotAnchoredVPResult {
+  poc: number; // Point of Control price
+  vah: number; // Value Area High price
+  val: number; // Value Area Low price
+  totalVolume: number;
+  vaVolume: number;
+  startIndex: number;
+  startTime: number;
+  endIndex: number;
+  endTime: number;
+  pivot: PivotPoint | null;
+  rows: PAVPVolumeRow[];
+  isDeveloping: boolean;
+  vwcbHighVolIndices: number[]; // Indices of candles flagged with High Volume in dgtrd VWCB
+}
+
+export interface PAVPSignal {
+  type: "BUY_CE_VAL" | "BUY_PE_VAH" | "BUY_CE_POC" | "BUY_PE_POC";
+  label: string;
+  action: "BUY CE" | "BUY PE";
+  strikeSuggestion?: string;
+  levelPrice: number;
+  candleIndex: number;
+  time: number;
+  sl: number;
+  tp1: number;
+  tp2: number;
+  rationale: string;
 }
 
 export interface TechnicalIndicatorSet {
@@ -48,6 +135,7 @@ export interface TechnicalIndicatorSet {
   };
   smc?: SMCData;
   volumeProfile?: VolumeProfileResult;
+  pavp?: PivotAnchoredVPResult;
   sessionLevels?: SessionLevelsResult;
 }
 

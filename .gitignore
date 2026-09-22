@@ -1,4 +1,4 @@
-﻿# dependencies
+# dependencies
 /node_modules
 /.pnp
 .pnp.js
@@ -28,3 +28,4 @@ Thumbs.db
 # Python
 __pycache__/
 *.py[cod]
+*.tsbuildinfo

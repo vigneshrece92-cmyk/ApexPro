@@ -18,6 +18,12 @@ export async function GET(req: NextRequest) {
 
   // Yahoo symbol mapping
   const yahooSymbols: Record<string, string> = {
+    NIFTY: "^NSEI",
+    BANKNIFTY: "^NSEBANK",
+    SENSEX: "^BSESN",
+    CRUDEOIL: "CL=F",
+    NATURALGAS: "NG=F",
+    FINNIFTY: "NIFTY_FIN_SERVICE.NS",
     XAGUSD: "SI=F",
     EURUSD: "EURUSD=X",
     GBPUSD: "GBPUSD=X",
@@ -163,11 +169,18 @@ export async function GET(req: NextRequest) {
             if (!res0) return;
 
             const meta = res0.meta;
-            const regularPrice = meta?.regularMarketPrice;
+            let regularPrice = meta?.regularMarketPrice;
             if (regularPrice == null) return;
 
-            const prevClose = meta?.previousClose || meta?.chartPreviousClose || regularPrice;
-            const changePercent = prevClose ? +(((regularPrice - prevClose) / prevClose) * 100).toFixed(2) : 0;
+            // MCX conversion: NYMEX CL=F / NG=F converted to MCX INR per barrel / mmBtu
+            const isCrude = key === "CRUDEOIL";
+            const isNatGas = key === "NATURALGAS";
+            const mcxMultiplier = isCrude || isNatGas ? 83.8 : 1.0;
+
+            const effectivePrice = regularPrice * mcxMultiplier;
+            const prevClose = (meta?.previousClose || meta?.chartPreviousClose || regularPrice) * mcxMultiplier;
+            const changePercent = prevClose ? +(((effectivePrice - prevClose) / prevClose) * 100).toFixed(2) : 0;
+            
             const precision =
               key === "EURUSD" || key === "GBPUSD"
                 ? 5
@@ -176,21 +189,26 @@ export async function GET(req: NextRequest) {
                 : 2;
             const multiplier = precision === 5 ? 10000 : 100;
 
-            const high = meta?.regularMarketDayHigh || meta?.highPrice || regularPrice;
-            const low = meta?.regularMarketDayLow || meta?.lowPrice || regularPrice;
+            const high = (meta?.regularMarketDayHigh || meta?.highPrice || regularPrice) * mcxMultiplier;
+            const low = (meta?.regularMarketDayLow || meta?.lowPrice || regularPrice) * mcxMultiplier;
+
+            const baseQuote = INITIAL_QUOTES[key as AssetSymbol];
 
             updatedQuotes[key as AssetSymbol] = {
               symbol: key as AssetSymbol,
-              name: INITIAL_QUOTES[key as AssetSymbol]?.name || key,
-              category: INITIAL_QUOTES[key as AssetSymbol]?.category || "Forex",
-              bid: +regularPrice.toFixed(precision),
-              ask: +(regularPrice + (key.includes("USD") ? 0.0001 : 0.01)).toFixed(precision),
-              spread: +(1.0).toFixed(1),
+              name: baseQuote?.name || key,
+              category: baseQuote?.category || "Forex",
+              bid: +effectivePrice.toFixed(precision),
+              ask: +(effectivePrice + (key.includes("USD") ? 0.0001 : 1.5)).toFixed(precision),
+              spread: +(1.5).toFixed(1),
               change24h: changePercent,
               high24h: +high.toFixed(precision),
               low24h: +low.toFixed(precision),
               pipPrecision: precision,
               pipMultiplier: multiplier,
+              lotSize: baseQuote?.lotSize,
+              strikeStep: baseQuote?.strikeStep,
+              currency: baseQuote?.currency,
               lastUpdate: Date.now(),
             };
 
@@ -210,10 +228,10 @@ export async function GET(req: NextRequest) {
                 if (o != null && c != null && h != null && l != null) {
                   parsed.push({
                     time: times[i],
-                    open: +o.toFixed(precision),
-                    high: +h.toFixed(precision),
-                    low: +l.toFixed(precision),
-                    close: +c.toFixed(precision),
+                    open: +(o * mcxMultiplier).toFixed(precision),
+                    high: +(h * mcxMultiplier).toFixed(precision),
+                    low: +(l * mcxMultiplier).toFixed(precision),
+                    close: +(c * mcxMultiplier).toFixed(precision),
                     volume: v,
                   });
                 }
@@ -221,7 +239,7 @@ export async function GET(req: NextRequest) {
 
               if (parsed.length > 0) {
                 // Ensure the last candle reflects the latest live price
-                parsed[parsed.length - 1].close = +regularPrice.toFixed(precision);
+                parsed[parsed.length - 1].close = +effectivePrice.toFixed(precision);
                 activeCandles = parsed.slice(-count);
               }
             }

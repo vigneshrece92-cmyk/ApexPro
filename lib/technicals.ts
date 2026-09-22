@@ -11,6 +11,10 @@ import {
   VolumeProfileBin,
   ChartSignalMarker,
   SessionLevelsResult,
+  PivotPoint,
+  PivotAnchoredVPResult,
+  PAVPVolumeRow,
+  PAVPSignal,
 } from "./types";
 
 // Calculate smooth EMA series without initial jump or raw price contamination
@@ -340,6 +344,7 @@ export function computeTechnicals(candles: Candle[], precision = 2): TechnicalIn
     },
     smc: computeSMC(candles, precision),
     volumeProfile: calculateVolumeProfile(candles, 32, 0.70, precision),
+    pavp: calculatePivotAnchoredVolumeProfile(candles, 15, 28, 0.68, precision),
     sessionLevels: calculateSessionLevels(candles, precision),
   };
 }
@@ -853,4 +858,437 @@ export function detectChartSignals(
 
   // Strictly limit to the 2 to 3 most recent high-conviction sniper signals
   return markers.slice(-3);
+}
+
+/**
+ * Detect Pivot High & Pivot Low (ta.pivothigh & ta.pivotlow)
+ * Exact mathematical port of PineScript pivot point functions
+ */
+export function findPivotPoints(candles: Candle[], pvtLength = 15): PivotPoint[] {
+  if (!candles || candles.length < pvtLength * 2 + 1) {
+    if (candles && candles.length >= 7) {
+      return findPivotPoints(candles, Math.max(3, Math.floor(candles.length / 4)));
+    }
+    return [];
+  }
+
+  const pivots: PivotPoint[] = [];
+
+  for (let i = pvtLength; i < candles.length - pvtLength; i++) {
+    const curHigh = candles[i].high;
+    const curLow = candles[i].low;
+
+    let isHigh = true;
+    let isLow = true;
+
+    for (let j = 1; j <= pvtLength; j++) {
+      if (candles[i - j].high >= curHigh || candles[i + j].high > curHigh) {
+        isHigh = false;
+      }
+      if (candles[i - j].low <= curLow || candles[i + j].low < curLow) {
+        isLow = false;
+      }
+      if (!isHigh && !isLow) break;
+    }
+
+    if (isHigh) {
+      pivots.push({
+        index: i,
+        time: candles[i].time,
+        price: curHigh,
+        type: "high",
+        pvtLength,
+      });
+    }
+    if (isLow) {
+      pivots.push({
+        index: i,
+        time: candles[i].time,
+        price: curLow,
+        type: "low",
+        pvtLength,
+      });
+    }
+  }
+
+  // If no pivots were found with pvtLength, try with shorter length
+  if (pivots.length === 0 && pvtLength > 5) {
+    return findPivotPoints(candles, Math.max(4, Math.floor(pvtLength / 2)));
+  }
+
+  return pivots;
+}
+
+/**
+ * Pivot-Anchored Volume Profile (PAVP)
+ * Mathematical Port of PineScript v6 by © dgtrd (ᴘᴀVP · ☼☾)
+ *
+ * Anchors the profile strictly at the latest confirmed Pivot Point (High or Low)
+ * and calculates the developing profile up to the live candle.
+ */
+export function calculatePivotAnchoredVolumeProfile(
+  candles: Candle[],
+  pvtLength = 15,
+  profileLevels = 28,
+  valueAreaPct = 0.68,
+  precision = 2
+): PivotAnchoredVPResult {
+  if (!candles || candles.length === 0) {
+    return {
+      poc: 0,
+      vah: 0,
+      val: 0,
+      totalVolume: 0,
+      vaVolume: 0,
+      startIndex: 0,
+      startTime: 0,
+      endIndex: 0,
+      endTime: 0,
+      pivot: null,
+      rows: [],
+      isDeveloping: true,
+      vwcbHighVolIndices: [],
+    };
+  }
+
+  // 1. Compute Volume Weighted Colored Bars (VWCB)
+  // pine: VolMA = ta.sma(volume, 89)
+  // isHighVol = volume > VolMA * 1.618
+  const vwcbIndices: number[] = [];
+  const volLookback = Math.min(candles.length, 89);
+  const volSlice = candles.slice(-volLookback).map((c) => c.volume || 100);
+  const avgVol = volSlice.reduce((a, b) => a + b, 0) / Math.max(1, volSlice.length);
+  const highVolThreshold = avgVol * 1.618;
+
+  for (let i = 0; i < candles.length; i++) {
+    const v = candles[i].volume || 100;
+    if (v >= highVolThreshold) {
+      vwcbIndices.push(i);
+    }
+  }
+
+  // 2. Identify the anchor pivot point
+  const allPivots = findPivotPoints(candles, pvtLength);
+  const latestPivot = allPivots.length > 0 ? allPivots[allPivots.length - 1] : null;
+
+  // If no pivot found, anchor at ~30 bars back or start of data
+  const anchorIndex = latestPivot
+    ? latestPivot.index
+    : Math.max(0, candles.length - Math.min(candles.length, 35));
+
+  const endIndex = candles.length - 1;
+  const profileCandles = candles.slice(anchorIndex);
+
+  let profileHigh = -Infinity;
+  let profileLow = Infinity;
+
+  for (const c of profileCandles) {
+    if (c.high > profileHigh) profileHigh = c.high;
+    if (c.low < profileLow) profileLow = c.low;
+  }
+
+  if (profileLow === Infinity || profileHigh === -Infinity || profileLow >= profileHigh) {
+    const c = candles[endIndex];
+    return {
+      poc: c.close,
+      vah: +(c.close * 1.002).toFixed(precision),
+      val: +(c.close * 0.998).toFixed(precision),
+      totalVolume: 100,
+      vaVolume: 68,
+      startIndex: anchorIndex,
+      startTime: candles[anchorIndex].time,
+      endIndex,
+      endTime: candles[endIndex].time,
+      pivot: latestPivot,
+      rows: [],
+      isDeveloping: true,
+      vwcbHighVolIndices: vwcbIndices,
+    };
+  }
+
+  const range = profileHigh - profileLow;
+  const stepHeight = range / profileLevels;
+
+  // Initialize profile rows
+  const rows: PAVPVolumeRow[] = [];
+  for (let i = 0; i < profileLevels; i++) {
+    rows.push({
+      price: +(profileLow + (i + 0.5) * stepHeight).toFixed(precision),
+      volume: 0,
+      isValueArea: false,
+      isPOC: false,
+    });
+  }
+
+  // Distribute volume into rows across the developing window
+  let totalVolume = 0;
+  for (const c of profileCandles) {
+    const candleVol =
+      typeof c.volume === "number" && c.volume > 0
+        ? c.volume
+        : Math.max(50, Math.round((c.high - c.low) * 1000 + 100));
+
+    const startIdx = Math.max(0, Math.min(profileLevels - 1, Math.floor((c.low - profileLow) / stepHeight)));
+    const endIdx = Math.max(0, Math.min(profileLevels - 1, Math.floor((c.high - profileLow) / stepHeight)));
+    const spannedRows = endIdx - startIdx + 1;
+    const volPerRow = candleVol / spannedRows;
+
+    for (let r = startIdx; r <= endIdx; r++) {
+      rows[r].volume += volPerRow;
+      totalVolume += volPerRow;
+    }
+  }
+
+  // Find POC (row with maximum volume)
+  let maxVol = -1;
+  let pocIdx = 0;
+  for (let i = 0; i < rows.length; i++) {
+    if (rows[i].volume > maxVol) {
+      maxVol = rows[i].volume;
+      pocIdx = i;
+    }
+  }
+
+  rows[pocIdx].isPOC = true;
+  rows[pocIdx].isValueArea = true;
+
+  // Expand Value Area to 68% (dgtrd reference valueAreaPct = 68)
+  const targetVAVolume = totalVolume * valueAreaPct;
+  let currentVAVolume = rows[pocIdx].volume;
+
+  let upIdx = pocIdx + 1;
+  let downIdx = pocIdx - 1;
+
+  while (currentVAVolume < targetVAVolume && (upIdx < rows.length || downIdx >= 0)) {
+    const volUp = upIdx < rows.length ? rows[upIdx].volume : -1;
+    const volDown = downIdx >= 0 ? rows[downIdx].volume : -1;
+
+    if (volUp >= volDown && volUp >= 0) {
+      rows[upIdx].isValueArea = true;
+      currentVAVolume += volUp;
+      upIdx++;
+    } else if (volDown >= 0) {
+      rows[downIdx].isValueArea = true;
+      currentVAVolume += volDown;
+      downIdx--;
+    } else {
+      break;
+    }
+  }
+
+  const vaIndices = rows.map((r, idx) => (r.isValueArea ? idx : -1)).filter((idx) => idx !== -1);
+  const minVAIdx = vaIndices.length > 0 ? Math.min(...vaIndices) : pocIdx;
+  const maxVAIdx = vaIndices.length > 0 ? Math.max(...vaIndices) : pocIdx;
+
+  return {
+    poc: rows[pocIdx].price,
+    vah: rows[maxVAIdx].price,
+    val: rows[minVAIdx].price,
+    totalVolume: Math.round(totalVolume),
+    vaVolume: Math.round(currentVAVolume),
+    startIndex: anchorIndex,
+    startTime: candles[anchorIndex].time,
+    endIndex,
+    endTime: candles[endIndex].time,
+    pivot: latestPivot,
+    rows,
+    isDeveloping: true,
+    vwcbHighVolIndices: vwcbIndices,
+  };
+}
+
+/**
+ * Detect High-Conviction Option & Commodity Trading Signals
+ * STRICTLY based on Pivot-Anchored Volume Profile (PAVP) Key Levels (VAH, VAL, POC)
+ */
+export function detectPAVPSignals(
+  candles: Candle[],
+  pavp?: PivotAnchoredVPResult,
+  symbol?: string,
+  precision = 2
+): {
+  markers: ChartSignalMarker[];
+  signals: PAVPSignal[];
+} {
+  if (!candles || candles.length < 15) {
+    return { markers: [], signals: [] };
+  }
+
+  const profile = pavp || calculatePivotAnchoredVolumeProfile(candles, 15, 28, 0.68, precision);
+  if (!profile || profile.poc <= 0) {
+    return { markers: [], signals: [] };
+  }
+
+  const { val, vah, poc } = profile;
+  const vaRange = Math.abs(vah - val);
+  if (vaRange <= 0) return { markers: [], signals: [] };
+
+  const markers: ChartSignalMarker[] = [];
+  const signals: PAVPSignal[] = [];
+
+  // Buffer for level interaction
+  const buffer = Math.max(0.15, vaRange * 0.05);
+
+  let lastAction: "BUY CE" | "BUY PE" | null = null;
+  let lastSignalIdx = -20;
+  let lastLevel: "VAL" | "VAH" | "POC" | null = null;
+
+  // Scan candles starting from anchor or last 40 bars
+  const startIdx = Math.max(profile.startIndex, candles.length - 40);
+
+  for (let i = startIdx; i < candles.length; i++) {
+    if (i - lastSignalIdx < 14) continue; // prevent cluttered signals
+
+    const c = candles[i];
+    const prevC = candles[i - 1];
+    if (!prevC) continue;
+
+    // 1. BUY CE @ VAL: Price sweeps/tests VAL and rejects with bullish candle
+    const testedVAL = c.low <= val + buffer && Math.abs(c.low - val) < buffer * 2.5;
+    const bullishRejection = c.close > c.open || (c.close - c.low) > (c.high - c.close) * 1.5;
+    const closedAboveVAL = c.close >= val - buffer * 0.4;
+    const isVALCall = testedVAL && closedAboveVAL && bullishRejection;
+
+    // 2. BUY PE @ VAH: Price sweeps/tests VAH and rejects with bearish candle
+    const testedVAH = c.high >= vah - buffer && Math.abs(c.high - vah) < buffer * 2.5;
+    const bearishRejection = c.close < c.open || (c.high - c.close) > (c.close - c.low) * 1.5;
+    const closedBelowVAH = c.close <= vah + buffer * 0.4;
+    const isVAHPut = testedVAH && closedBelowVAH && bearishRejection;
+
+    // 3. BUY CE @ POC: Bullish retest of Point of Control
+    const isPOCBounce = prevC.close >= poc && c.low <= poc + buffer * 0.6 && c.close > poc && c.close > c.open;
+    const isPOCCall = isPOCBounce && lastLevel !== "POC" && Math.abs(c.close - val) > buffer * 1.8;
+
+    // 4. BUY PE @ POC: Bearish rejection at Point of Control
+    const isPOCReject = prevC.close <= poc && c.high >= poc - buffer * 0.6 && c.close < poc && c.close < c.open;
+    const isPOCPut = isPOCReject && lastLevel !== "POC" && Math.abs(c.close - vah) > buffer * 1.8;
+
+    if (isVALCall && lastAction !== "BUY CE") {
+      const sl = +(val - buffer * 1.5).toFixed(precision);
+      const tp1 = +poc.toFixed(precision);
+      const tp2 = +vah.toFixed(precision);
+
+      signals.push({
+        type: "BUY_CE_VAL",
+        label: `BUY CE @ VAL ${c.close.toFixed(precision)}`,
+        action: "BUY CE",
+        levelPrice: val,
+        candleIndex: i,
+        time: c.time,
+        sl,
+        tp1,
+        tp2,
+        rationale: `Bullish rejection off Value Area Low (VAL: ${val.toFixed(precision)}). Target POC magnet (${poc.toFixed(precision)}) and VAH (${vah.toFixed(precision)}).`,
+      });
+
+      markers.push({
+        time: c.time,
+        position: "belowBar",
+        color: "#00E676", // vibrant fluorescent green
+        shape: "arrowUp",
+        text: `BUY CE @ VAL ${c.close.toFixed(precision)}`,
+        size: 1.4,
+      });
+
+      lastAction = "BUY CE";
+      lastLevel = "VAL";
+      lastSignalIdx = i;
+    } else if (isVAHPut && lastAction !== "BUY PE") {
+      const sl = +(vah + buffer * 1.5).toFixed(precision);
+      const tp1 = +poc.toFixed(precision);
+      const tp2 = +val.toFixed(precision);
+
+      signals.push({
+        type: "BUY_PE_VAH",
+        label: `BUY PE @ VAH ${c.close.toFixed(precision)}`,
+        action: "BUY PE",
+        levelPrice: vah,
+        candleIndex: i,
+        time: c.time,
+        sl,
+        tp1,
+        tp2,
+        rationale: `Bearish rejection off Value Area High (VAH: ${vah.toFixed(precision)}). Target POC magnet (${poc.toFixed(precision)}) and VAL (${val.toFixed(precision)}).`,
+      });
+
+      markers.push({
+        time: c.time,
+        position: "aboveBar",
+        color: "#FF1744", // vibrant red
+        shape: "arrowDown",
+        text: `BUY PE @ VAH ${c.close.toFixed(precision)}`,
+        size: 1.4,
+      });
+
+      lastAction = "BUY PE";
+      lastLevel = "VAH";
+      lastSignalIdx = i;
+    } else if (isPOCCall && lastAction !== "BUY CE") {
+      const sl = +(poc - buffer * 1.2).toFixed(precision);
+      const tp1 = +vah.toFixed(precision);
+      const tp2 = +(vah + buffer * 2.0).toFixed(precision);
+
+      signals.push({
+        type: "BUY_CE_POC",
+        label: `BUY CE @ POC ${c.close.toFixed(precision)}`,
+        action: "BUY CE",
+        levelPrice: poc,
+        candleIndex: i,
+        time: c.time,
+        sl,
+        tp1,
+        tp2,
+        rationale: `Point of Control (POC: ${poc.toFixed(precision)}) retest support confirmed. Target VAH (${vah.toFixed(precision)}).`,
+      });
+
+      markers.push({
+        time: c.time,
+        position: "belowBar",
+        color: "#00E5FF", // vibrant cyan
+        shape: "arrowUp",
+        text: `BUY CE @ POC ${c.close.toFixed(precision)}`,
+        size: 1.2,
+      });
+
+      lastAction = "BUY CE";
+      lastLevel = "POC";
+      lastSignalIdx = i;
+    } else if (isPOCPut && lastAction !== "BUY PE") {
+      const sl = +(poc + buffer * 1.2).toFixed(precision);
+      const tp1 = +val.toFixed(precision);
+      const tp2 = +(val - buffer * 2.0).toFixed(precision);
+
+      signals.push({
+        type: "BUY_PE_POC",
+        label: `BUY PE @ POC ${c.close.toFixed(precision)}`,
+        action: "BUY PE",
+        levelPrice: poc,
+        candleIndex: i,
+        time: c.time,
+        sl,
+        tp1,
+        tp2,
+        rationale: `Point of Control (POC: ${poc.toFixed(precision)}) resistance confirmed. Target VAL (${val.toFixed(precision)}).`,
+      });
+
+      markers.push({
+        time: c.time,
+        position: "aboveBar",
+        color: "#FF9100", // vibrant orange
+        shape: "arrowDown",
+        text: `BUY PE @ POC ${c.close.toFixed(precision)}`,
+        size: 1.2,
+      });
+
+      lastAction = "BUY PE";
+      lastLevel = "POC";
+      lastSignalIdx = i;
+    }
+  }
+
+  // Strictly return the 2-3 most recent signals to keep charts pristine and professional
+  return {
+    markers: markers.slice(-3),
+    signals: signals.slice(-3),
+  };
 }

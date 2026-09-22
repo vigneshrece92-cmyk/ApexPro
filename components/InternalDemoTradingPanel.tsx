@@ -32,6 +32,7 @@ import {
   saveDemoAccount,
   isForexMarketOpen,
 } from "@/lib/demoTradingEngine";
+import { getRecommendedOptionContract, getOptionSpec } from "@/lib/optionsEngine";
 import { sendTelegramNotification } from "@/lib/telegramBroadcaster";
 import { Quote } from "@/lib/types";
 
@@ -113,22 +114,34 @@ export const InternalDemoTradingPanel: React.FC<InternalDemoTradingPanelProps> =
 
   const handleExecute = () => {
     setStatusMessage({ type: null, text: "" });
+    const isIndian = ["NIFTY", "BANKNIFTY", "CRUDEOIL", "NATURALGAS", "SENSEX", "FINNIFTY"].includes(liveQuote.symbol);
+    const opt = isIndian ? getRecommendedOptionContract(liveQuote.symbol, action === "BUY" ? "BUY CE" : "BUY PE", currentOpenPrice) : null;
+    const optSpec = getOptionSpec(liveQuote.symbol);
+    const currencySym = liveQuote.currency || account.currency || "₹";
+
     const res = executeDemoTrade(account, {
-      symbol: "XAUUSD",
+      symbol: liveQuote.symbol,
       type: action,
-      volume: lotSize,
+      volume: isIndian ? Math.max(1, lotSize) : lotSize,
       quote: liveQuote,
       sl: stopLoss,
       tp: takeProfit,
-      comment: prefillSetup ? "Alert_PO3_Retest" : "Manual_Entry",
+      comment: prefillSetup ? "Alert_Retest" : (isIndian ? "Manual Option Entry" : "Manual_Entry"),
+      optionContractName: opt ? `${liveQuote.symbol} ${opt.strike} ${opt.type}` : undefined,
+      optionType: opt?.type,
+      optionStrike: opt?.strike,
+      optionEntryPremium: opt?.premiumAsk,
+      lotSizeMultiplier: isIndian ? optSpec.lotSize : undefined,
+      currency: currencySym,
     });
 
     if (res.success) {
       onUpdateAccount(res.state);
       setStatusMessage({ type: "success", text: res.message });
       const newPos = res.state.open_positions[0];
+      const desc = opt ? `${newPos?.optionContractName} @ ${currencySym}${opt.premiumAsk}` : `${action} ${lotSize} ${liveQuote.symbol}`;
       sendTelegramNotification(
-        `⚡ <b>ApexFX Trade Executed</b>\n━━━━━━━━━━━━━━━━━━━━\n<b>Action:</b> ${action} ${lotSize} XAUUSD\n<b>Price:</b> $${fmt2(currentOpenPrice)}\n<b>Stop Loss:</b> $${fmt2(stopLoss)}\n<b>Take Profit:</b> $${fmt2(takeProfit)}\n<b>Ticket:</b> #${newPos ? newPos.ticket : ""}\n<i>ApexFX Virtual Broker • 1:1000 Leverage</i>`
+        `⚡ <b>Apex Terminal Trade Executed</b>\n━━━━━━━━━━━━━━━━━━━━\n<b>Order:</b> ${desc}\n<b>Underlying:</b> ${currencySym}${fmt2(currentOpenPrice)}\n<b>Stop Loss:</b> ${currencySym}${fmt2(stopLoss)}\n<b>Take Profit:</b> ${currencySym}${fmt2(takeProfit)}\n<b>Ticket:</b> #${newPos ? newPos.ticket : ""}\n<i>Apex Terminal Virtual Broker</i>`
       ).catch(() => {});
     } else {
       setStatusMessage({ type: "error", text: res.message });
@@ -794,9 +807,9 @@ export const InternalDemoTradingPanel: React.FC<InternalDemoTradingPanelProps> =
                     <table className="w-full text-xs text-left font-mono">
                       <thead className="bg-[#070A0F] text-terminal-muted uppercase text-[10px] border-b border-terminal-border">
                         <tr>
-                          <th className="px-3 py-2">Ticket</th>
+                          <th className="px-3 py-2">Contract</th>
                           <th className="px-3 py-2">Side</th>
-                          <th className="px-3 py-2">Lots</th>
+                          <th className="px-3 py-2">Volume</th>
                           <th className="px-3 py-2">Open Price</th>
                           <th className="px-3 py-2">Current</th>
                           <th className="px-3 py-2">SL / TP</th>
@@ -805,48 +818,59 @@ export const InternalDemoTradingPanel: React.FC<InternalDemoTradingPanelProps> =
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-terminal-border bg-terminal-card/50">
-                        {account.open_positions.map((pos) => (
-                          <tr key={pos.ticket} className="hover:bg-terminal-hover/40">
-                            <td className="px-3 py-2 font-bold text-gray-300">
-                              #{pos.ticket}
-                            </td>
-                            <td className="px-3 py-2">
-                              <span
-                                className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
-                                  pos.type === "BUY"
-                                    ? "bg-bull/20 text-bull border border-bull/40"
-                                    : "bg-bear/20 text-bear border border-bear/40"
-                                }`}
-                              >
-                                {pos.type}
-                              </span>
-                            </td>
-                            <td className="px-3 py-2 text-white">{pos.volume}</td>
-                            <td className="px-3 py-2 text-gray-300">
-                              ${fmt2(pos.price_open)}
-                            </td>
-                            <td className="px-3 py-2 text-gray-200">
-                              ${fmt2(pos.price_current)}
-                            </td>
-                            <td className="px-3 py-2 text-terminal-muted text-[11px]">
-                              <span>SL: ${fmt2(pos.sl)}</span>
-                              <br />
-                              <span>TP: ${fmt2(pos.tp)}</span>
-                            </td>
-                            <td className="px-3 py-2 font-bold">
-                              <span
-                                className={`${
-                                  (pos.profit || 0) >= 0 ? "text-bull" : "text-bear"
-                                }`}
-                              >
-                                {(pos.profit || 0) >= 0 ? "+" : ""}${fmt2(pos.profit)}
-                              </span>
-                              {pos.be_triggered && (
-                                <span className="ml-1 text-[9px] px-1 rounded bg-blue-500/20 text-blue-400">
-                                  BE
+                        {account.open_positions.map((pos) => {
+                          const cSym = pos.currency || liveQuote?.currency || account.currency || "₹";
+                          return (
+                            <tr key={pos.ticket} className="hover:bg-terminal-hover/40">
+                              <td className="px-3 py-2 font-bold text-gray-300">
+                                <div className="text-white font-bold">{pos.optionContractName || pos.symbol}</div>
+                                <div className="text-[10px] text-terminal-muted font-normal">#{pos.ticket}</div>
+                              </td>
+                              <td className="px-3 py-2">
+                                <span
+                                  className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                                    pos.type === "BUY"
+                                      ? "bg-bull/20 text-bull border border-bull/40"
+                                      : "bg-bear/20 text-bear border border-bear/40"
+                                  }`}
+                                >
+                                  {pos.optionType ? `${pos.optionType} BUY` : pos.type}
                                 </span>
-                              )}
-                            </td>
+                              </td>
+                              <td className="px-3 py-2 text-white">
+                                <div>{pos.volume} Lot{pos.volume > 1 ? "s" : ""}</div>
+                                {pos.lotSizeMultiplier && (
+                                  <div className="text-[9px] text-terminal-muted font-normal">{pos.lotSizeMultiplier * pos.volume} Qty</div>
+                                )}
+                              </td>
+                              <td className="px-3 py-2 text-gray-300">
+                                <div>{cSym}{fmt2(pos.price_open)}</div>
+                                {pos.optionEntryPremium && (
+                                  <div className="text-[9px] text-amber-300 font-bold">Prem: {cSym}{fmt2(pos.optionEntryPremium)}</div>
+                                )}
+                              </td>
+                              <td className="px-3 py-2 text-gray-200">
+                                {cSym}{fmt2(pos.price_current)}
+                              </td>
+                              <td className="px-3 py-2 text-terminal-muted text-[11px]">
+                                <span>SL: {cSym}{fmt2(pos.sl)}</span>
+                                <br />
+                                <span>TP: {cSym}{fmt2(pos.tp)}</span>
+                              </td>
+                              <td className="px-3 py-2 font-bold">
+                                <span
+                                  className={`${
+                                    (pos.profit || 0) >= 0 ? "text-bull" : "text-bear"
+                                  }`}
+                                >
+                                  {(pos.profit || 0) >= 0 ? "+" : ""}{cSym}{fmt2(pos.profit)}
+                                </span>
+                                {pos.be_triggered && (
+                                  <span className="ml-1 text-[9px] px-1 rounded bg-blue-500/20 text-blue-400">
+                                    BE
+                                  </span>
+                                )}
+                              </td>
                             <td className="px-3 py-2 text-right space-x-1.5">
                               {!pos.be_triggered && (
                                 <button
@@ -866,7 +890,8 @@ export const InternalDemoTradingPanel: React.FC<InternalDemoTradingPanelProps> =
                               </button>
                             </td>
                           </tr>
-                        ))}
+                        );
+                      })}
                       </tbody>
                     </table>
                   </div>

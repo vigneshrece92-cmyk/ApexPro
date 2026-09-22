@@ -1,11 +1,13 @@
-import { AssetSymbol, Quote, InstitutionalAlert } from "./types";
+import { AssetSymbol, Quote, InstitutionalAlert, Candle, PAVPSignal, OptionType, PivotAnchoredVPResult } from "./types";
 import { INITIAL_QUOTES } from "./defaultData";
+import { getRecommendedOptionContract, getOptionSpec } from "./optionsEngine";
+import { detectPAVPSignals, calculatePivotAnchoredVolumeProfile } from "./technicals";
 
 export interface DemoPosition {
   ticket: number;
   symbol: AssetSymbol;
   type: "BUY" | "SELL";
-  volume: number; // lot size, e.g. 0.02
+  volume: number; // lot size (e.g. 1 lot for Indian F&O, 0.02 for FX)
   price_open: number;
   sl: number;
   tp: number;
@@ -14,6 +16,12 @@ export interface DemoPosition {
   comment: string;
   time: number; // unix timestamp in ms
   be_triggered?: boolean;
+  optionContractName?: string; // e.g. "NIFTY 23350 CE"
+  optionType?: OptionType;
+  optionStrike?: number;
+  optionEntryPremium?: number;
+  lotSizeMultiplier?: number;
+  currency?: "₹" | "$";
 }
 
 export interface ClosedTrade {
@@ -30,6 +38,8 @@ export interface ClosedTrade {
   open_time: number;
   close_time: number;
   close_reason: "Take Profit Hit" | "Stop Loss Hit" | "Manual Exit" | "Break-Even Exit";
+  optionContractName?: string;
+  currency?: "₹" | "$";
 }
 
 export interface AutoBotLog {
@@ -48,17 +58,19 @@ export interface DemoAccountState {
   open_profit: number;
   open_positions: DemoPosition[];
   history: ClosedTrade[];
+  currency?: "₹" | "$";
   auto_bot: {
     enabled: boolean;
     risk_percent: number; // 0.5, 1.0, 1.5
     market_mode: "STRICT_REAL" | "24_7_PRACTICE";
+    strategy_mode?: "VOLUME_PROFILE_ONLY" | "ALL_CONFIRMATIONS";
     logs: AutoBotLog[];
   };
 }
 
-const STORAGE_KEY = "apexfx_demo_broker_v2";
+const STORAGE_KEY = "apexfx_demo_broker_v3";
 
-export const INITIAL_DEMO_BALANCE = 3000.0;
+export const INITIAL_DEMO_BALANCE = 100000.0;
 export const DEFAULT_LEVERAGE = 1000;
 
 /**
@@ -118,22 +130,24 @@ export const INITIAL_ACCOUNT_STATE: DemoAccountState = {
   open_profit: 0,
   open_positions: [],
   history: [],
+  currency: "₹",
   auto_bot: {
     enabled: true,
     risk_percent: 1.0,
     market_mode: "24_7_PRACTICE",
+    strategy_mode: "VOLUME_PROFILE_ONLY",
     logs: [
       {
         id: "init-1",
         timestamp: Date.now() - 300000,
         type: "info",
-        message: "ApexFX Virtual Broker Engine initialized with $3,000.00 demo balance (1:1000 Leverage • 0.02 Lots Standard • 100% Vercel Ready).",
+        message: "Apex Terminal Indian F&O & MCX Broker Engine initialized with ₹1,00,000.00 capital (1:1000 Leverage).",
       },
       {
         id: "init-2",
         timestamp: Date.now() - 180000,
         type: "info",
-        message: "Autonomous 4H PO3 Auto-Bot active & scanning confirmed institutional setups (24/7 Practice Mode).",
+        message: "Autonomous Pivot-Anchored Volume Profile (PAVP) Bot active — monitoring strictly VAH, VAL & POC levels.",
       },
     ],
   },
@@ -254,11 +268,23 @@ export function resetDemoAccount(): DemoAccountState {
 
 /**
  * Contract size multipliers:
- * XAUUSD: 100 oz per 1.00 lot ($1.00 move on 0.01 lot = $1.00 P&L)
- * XAGUSD: 5000 oz per 1.00 lot
- * Forex pairs: 100,000 units per lot
+ * NIFTY: 25 qty per lot
+ * BANKNIFTY: 15 qty per lot
+ * FINNIFTY: 25 qty per lot
+ * SENSEX: 10 qty per lot
+ * CRUDEOIL (MCX): 100 bbl per lot
+ * NATURALGAS (MCX): 1250 mmBtu per lot
+ * XAUUSD: 100 oz per lot
+ * XAGUSD: 5000 oz per lot
+ * Forex: 100,000 units per lot
  */
-function getContractSize(symbol: AssetSymbol): number {
+export function getContractSize(symbol: AssetSymbol, pos?: DemoPosition): number {
+  if (pos?.lotSizeMultiplier && pos.lotSizeMultiplier > 0) return pos.lotSizeMultiplier;
+  if (symbol === "NIFTY" || symbol === "FINNIFTY") return 25;
+  if (symbol === "BANKNIFTY") return 15;
+  if (symbol === "SENSEX") return 10;
+  if (symbol === "CRUDEOIL") return 100;
+  if (symbol === "NATURALGAS") return 1250;
   if (symbol === "XAUUSD") return 100;
   if (symbol === "XAGUSD") return 5000;
   return 100000;
@@ -271,7 +297,20 @@ export function calculatePositionProfit(
   pos: DemoPosition,
   quote: { bid: number; ask: number }
 ): number {
-  const contract = getContractSize(pos.symbol);
+  const contract = getContractSize(pos.symbol, pos);
+
+  // If this is an Indian Options contract
+  if (pos.optionType && pos.optionEntryPremium != null) {
+    const delta = 0.50; // ATM options delta approx 0.50
+    const spotChange = pos.optionType === "CE" 
+      ? (quote.bid - pos.price_open) 
+      : (pos.price_open - quote.ask);
+    const premiumChange = spotChange * delta;
+    const currentPremium = Math.max(0.5, pos.optionEntryPremium + premiumChange);
+    const profitPerUnit = currentPremium - pos.optionEntryPremium;
+    return Math.round(profitPerUnit * pos.volume * contract * 100) / 100;
+  }
+
   if (pos.type === "BUY") {
     // BUY exits at current Bid
     const diff = quote.bid - pos.price_open;
@@ -286,7 +325,17 @@ export function calculatePositionProfit(
 /**
  * Calculate margin requirement for a position
  */
-function calculateRequiredMargin(symbol: AssetSymbol, volume: number, price: number, leverage: number): number {
+export function calculateRequiredMargin(
+  symbol: AssetSymbol,
+  volume: number,
+  price: number,
+  leverage: number,
+  pos?: Partial<DemoPosition>
+): number {
+  if (pos?.optionType && pos?.optionEntryPremium != null) {
+    const contract = getContractSize(symbol, pos as DemoPosition);
+    return Math.round(pos.optionEntryPremium * volume * contract * 100) / 100;
+  }
   const contract = getContractSize(symbol);
   const notional = volume * contract * price;
   return Math.round((notional / leverage) * 100) / 100;
@@ -305,6 +354,12 @@ export function executeDemoTrade(
     sl: number;
     tp: number;
     comment?: string;
+    optionContractName?: string;
+    optionType?: OptionType;
+    optionStrike?: number;
+    optionEntryPremium?: number;
+    lotSizeMultiplier?: number;
+    currency?: "₹" | "$";
   }
 ): { success: boolean; state: DemoAccountState; message: string } {
   const { symbol, type, volume, quote, sl, tp, comment } = params;
@@ -316,24 +371,29 @@ export function executeDemoTrade(
       return {
         success: false,
         state,
-        message: `Execution blocked: Forex & Spot Gold markets are closed for the weekend (${marketCheck.statusText}). Switch to "24/7 Practice Mode" to execute simulated trades.`,
+        message: `Execution blocked: Market closed for the weekend (${marketCheck.statusText}). Switch to "24/7 Practice Mode" to execute simulated trades.`,
       };
     }
   }
 
-  // Enforce safe lot bounds for $3,000 account
-  const safeVolume = Math.max(0.01, Math.min(0.05, Math.round((volume || 0.02) * 100) / 100));
-  const openPrice = type === "BUY" ? (quote.ask || quote.bid || 4363.80) : (quote.bid || quote.ask || 4363.80);
-  const safeSL = typeof sl === "number" && !isNaN(sl) ? Math.round(sl * 100) / 100 : (type === "BUY" ? openPrice - 15.0 : openPrice + 15.0);
-  const safeTP = typeof tp === "number" && !isNaN(tp) ? Math.round(tp * 100) / 100 : (type === "BUY" ? openPrice + 30.0 : openPrice - 30.0);
+  const isOption = !!params.optionContractName;
+  const safeVolume = isOption
+    ? Math.max(1, Math.round(volume || 1))
+    : Math.max(0.01, Math.min(0.05, Math.round((volume || 0.02) * 100) / 100));
 
-  const requiredMargin = calculateRequiredMargin(symbol, safeVolume, openPrice, state.leverage || 1000);
+  const openPrice = type === "BUY" ? (quote.ask || quote.bid || 23330) : (quote.bid || quote.ask || 23330);
+  const safeSL = typeof sl === "number" && !isNaN(sl) ? Math.round(sl * 100) / 100 : (type === "BUY" ? openPrice - 50 : openPrice + 50);
+  const safeTP = typeof tp === "number" && !isNaN(tp) ? Math.round(tp * 100) / 100 : (type === "BUY" ? openPrice + 100 : openPrice - 100);
+
+  const currencySym = params.currency || quote.currency || (state.currency || "₹");
+  const requiredMargin = calculateRequiredMargin(symbol, safeVolume, openPrice, state.leverage || 1000, params);
   const marginFree = typeof state.margin_free === "number" && !isNaN(state.margin_free) ? state.margin_free : INITIAL_DEMO_BALANCE;
+  
   if (marginFree < requiredMargin) {
     return {
       success: false,
       state,
-      message: `Insufficient free margin. Required: $${requiredMargin.toFixed(2)}, Available: $${marginFree.toFixed(2)}`,
+      message: `Insufficient free margin. Required: ${currencySym}${requiredMargin.toFixed(2)}, Available: ${currencySym}${marginFree.toFixed(2)}`,
     };
   }
 
@@ -348,9 +408,15 @@ export function executeDemoTrade(
     tp: safeTP,
     price_current: openPrice,
     profit: 0,
-    comment: comment || "ApexFX 4H PO3",
+    comment: comment || (isOption ? "PAVP Option Entry" : "Apex Terminal Trade"),
     time: Date.now(),
     be_triggered: false,
+    optionContractName: params.optionContractName,
+    optionType: params.optionType,
+    optionStrike: params.optionStrike,
+    optionEntryPremium: params.optionEntryPremium,
+    lotSizeMultiplier: params.lotSizeMultiplier || getContractSize(symbol),
+    currency: currencySym,
   };
 
   const nextPositions = [newPosition, ...(state.open_positions || [])];
@@ -359,11 +425,16 @@ export function executeDemoTrade(
   const newMargin = Math.round((currentMargin + requiredMargin) * 100) / 100;
   const newMarginFree = Math.round((currentEquity - newMargin) * 100) / 100;
 
+  const lotDesc = isOption ? `${safeVolume} Lot (${newPosition.lotSizeMultiplier} Qty)` : `${safeVolume} lots`;
+  const tradeDesc = isOption
+    ? `BOUGHT ${params.optionContractName} @ ${currencySym}${params.optionEntryPremium?.toFixed(2)} (${lotDesc})`
+    : `${type} ${safeVolume} ${symbol} @ ${currencySym}${openPrice.toFixed(2)}`;
+
   const logMessage: AutoBotLog = {
     id: `log-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
     timestamp: Date.now(),
     type: "trade",
-    message: `[Order #${newTicket}] ${type} ${safeVolume} ${symbol} @ $${openPrice.toFixed(2)} executed. SL: $${safeSL.toFixed(2)}, TP: $${safeTP.toFixed(2)}.`,
+    message: `[Order #${newTicket}] ${tradeDesc} executed. SL: ${currencySym}${safeSL.toFixed(2)}, TP: ${currencySym}${safeTP.toFixed(2)}.`,
   };
 
   const nextLogs = [logMessage, ...(state.auto_bot?.logs || [])].slice(0, 50);
@@ -383,7 +454,7 @@ export function executeDemoTrade(
   return {
     success: true,
     state: nextState,
-    message: `Order #${newTicket} executed: ${type} ${safeVolume} ${symbol} at $${openPrice.toFixed(2)}`,
+    message: `Order #${newTicket} executed: ${tradeDesc}`,
   };
 }
 
@@ -404,7 +475,9 @@ export function closeDemoPosition(
   const pos = state.open_positions[posIndex];
   const closePrice = pos.type === "BUY" ? quote.bid : quote.ask;
   const profit = calculatePositionProfit(pos, quote);
-  const returnPercent = Math.round((profit / (pos.volume * getContractSize(pos.symbol) * pos.price_open)) * 10000) / 100;
+  const contract = getContractSize(pos.symbol, pos);
+  const baseCost = pos.optionEntryPremium ? (pos.optionEntryPremium * pos.volume * contract) : (pos.volume * contract * pos.price_open);
+  const returnPercent = Math.round((profit / Math.max(1, baseCost)) * 10000) / 100;
 
   const closedRecord: ClosedTrade = {
     ticket: pos.ticket,
@@ -420,6 +493,8 @@ export function closeDemoPosition(
     open_time: pos.time,
     close_time: Date.now(),
     close_reason: reason,
+    optionContractName: pos.optionContractName,
+    currency: pos.currency || state.currency || "₹",
   };
 
   const nextPositions = state.open_positions.filter((p) => p.ticket !== ticket);
@@ -431,7 +506,7 @@ export function closeDemoPosition(
   // Recalculate remaining margin
   let totalMargin = 0;
   for (const p of nextPositions) {
-    totalMargin += calculateRequiredMargin(p.symbol, p.volume, p.price_current, state.leverage);
+    totalMargin += calculateRequiredMargin(p.symbol, p.volume, p.price_current, state.leverage, p);
   }
   totalMargin = Math.round(totalMargin * 100) / 100;
 
@@ -653,13 +728,162 @@ export function tickDemoPositions(
  * Autonomous 4H PO3 Auto-Bot Engine
  * Scans active 4H Breakout/Retest, AMD, FVG, Order Block, and Silver Bullet setups and auto-executes if enabled
  */
+/**
+ * Autonomous Pivot-Anchored Volume Profile (PAVP) & Institutional Trading Engine
+ * Executes trades strictly on Volume Profile key levels:
+ * - BUY CE @ VAL: Price sweeps/tests VAL and bounces -> Buys ATM Call (CE)
+ * - BUY PE @ VAH: Price sweeps/tests VAH and rejects -> Buys ATM Put (PE)
+ * - BUY CE @ POC: Retest bounce off POC -> Buys ATM Call (CE)
+ * - BUY PE @ POC: Retest rejection off POC -> Buys ATM Put (PE)
+ */
 export function evaluateAutoBot(
   state: DemoAccountState,
   quote: Quote,
   alerts: InstitutionalAlert[],
-  allQuotes?: Record<AssetSymbol, Quote>
+  allQuotes?: Record<AssetSymbol, Quote>,
+  candles?: Candle[],
+  pavpSignals?: PAVPSignal[]
 ): DemoAccountState {
   if (!state.auto_bot || !state.auto_bot.enabled) {
+    return state;
+  }
+
+  // Limit max concurrent open positions to 2 to protect account capital
+  const openPositions = Array.isArray(state.open_positions) ? state.open_positions : [];
+  if (openPositions.length >= 2) {
+    return state;
+  }
+
+  const isIndianOrMCX =
+    quote.symbol === "NIFTY" ||
+    quote.symbol === "BANKNIFTY" ||
+    quote.symbol === "CRUDEOIL" ||
+    quote.symbol === "NATURALGAS" ||
+    quote.symbol === "SENSEX" ||
+    quote.symbol === "FINNIFTY";
+
+  // 1. Check for Strict Volume Profile (PAVP) Entry
+  let activeSignals = pavpSignals;
+  let pavpRes: PivotAnchoredVPResult | null = null;
+  if (!activeSignals && candles && candles.length >= 15) {
+    const liveCandles = [...candles];
+    const lastBar = { ...liveCandles[liveCandles.length - 1] };
+    lastBar.close = quote.bid;
+    if (quote.bid > lastBar.high) lastBar.high = quote.bid;
+    if (quote.bid < lastBar.low) lastBar.low = quote.bid;
+    liveCandles[liveCandles.length - 1] = lastBar;
+
+    pavpRes = calculatePivotAnchoredVolumeProfile(liveCandles, 15, 28, 0.68, quote.pipPrecision || 2);
+    activeSignals = detectPAVPSignals(liveCandles, pavpRes, quote.symbol, quote.pipPrecision || 2).signals;
+  }
+
+  // Live real-time proximity check if no recent historical signal found
+  if ((!activeSignals || activeSignals.length === 0) && pavpRes && pavpRes.poc > 0 && candles && candles.length >= 15) {
+    const { val, vah, poc } = pavpRes;
+    const vaRange = Math.abs(vah - val);
+    const buffer = Math.max(0.15, vaRange * 0.05);
+    const precision = quote.pipPrecision || 2;
+    const lastCandle = candles[candles.length - 1];
+
+    if (Math.abs(quote.bid - val) <= buffer * 1.5) {
+      activeSignals = [{
+        type: "BUY_CE_VAL",
+        label: `BUY CE @ VAL ${quote.bid.toFixed(precision)}`,
+        action: "BUY CE",
+        levelPrice: val,
+        candleIndex: candles.length - 1,
+        time: lastCandle.time,
+        sl: +(val - buffer * 1.5).toFixed(precision),
+        tp1: +poc.toFixed(precision),
+        tp2: +vah.toFixed(precision),
+        rationale: `Live sweep/rebound at Value Area Low (VAL: ${val.toFixed(precision)}). Target POC magnet (${poc.toFixed(precision)}).`,
+      }];
+    } else if (Math.abs(quote.bid - vah) <= buffer * 1.5) {
+      activeSignals = [{
+        type: "BUY_PE_VAH",
+        label: `BUY PE @ VAH ${quote.bid.toFixed(precision)}`,
+        action: "BUY PE",
+        levelPrice: vah,
+        candleIndex: candles.length - 1,
+        time: lastCandle.time,
+        sl: +(vah + buffer * 1.5).toFixed(precision),
+        tp1: +poc.toFixed(precision),
+        tp2: +val.toFixed(precision),
+        rationale: `Live test/rejection at Value Area High (VAH: ${vah.toFixed(precision)}). Target POC magnet (${poc.toFixed(precision)}).`,
+      }];
+    } else if (Math.abs(quote.bid - poc) <= buffer * 0.8) {
+      const isAbove = quote.bid >= poc;
+      activeSignals = [{
+        type: isAbove ? "BUY_CE_POC" : "BUY_PE_POC",
+        label: isAbove ? `BUY CE @ POC ${quote.bid.toFixed(precision)}` : `BUY PE @ POC ${quote.bid.toFixed(precision)}`,
+        action: isAbove ? "BUY CE" : "BUY PE",
+        levelPrice: poc,
+        candleIndex: candles.length - 1,
+        time: lastCandle.time,
+        sl: +(isAbove ? poc - buffer * 1.2 : poc + buffer * 1.2).toFixed(precision),
+        tp1: +(isAbove ? vah : val).toFixed(precision),
+        tp2: +(isAbove ? vah + buffer : val - buffer).toFixed(precision),
+        rationale: `Point of Control (${poc.toFixed(precision)}) active retest. Target ${isAbove ? "VAH" : "VAL"}.`,
+      }];
+    }
+  }
+
+  if (activeSignals && activeSignals.length > 0) {
+    const latestSignal = activeSignals[activeSignals.length - 1];
+    const alreadyOpenOnSymbol = openPositions.some((p) => p.symbol === quote.symbol);
+
+    const recentlyTradedSymbol = openPositions.some(
+      (p) => p.symbol === quote.symbol && typeof p.time === "number" && Date.now() - p.time < 60000
+    );
+
+    const isRecent = !candles || (latestSignal.candleIndex >= candles.length - 12);
+    const isStillValid = latestSignal.action === "BUY CE"
+      ? quote.bid <= latestSignal.tp1 && quote.bid >= latestSignal.sl
+      : quote.bid >= latestSignal.tp1 && quote.bid <= latestSignal.sl;
+
+    if (!alreadyOpenOnSymbol && !recentlyTradedSymbol && latestSignal && isRecent && isStillValid) {
+      const optContract = getRecommendedOptionContract(quote.symbol, latestSignal.action, quote.bid);
+      const optSpec = getOptionSpec(quote.symbol);
+      const currencySym = quote.currency || state.currency || "₹";
+
+      const botLog: AutoBotLog = {
+        id: `bot-pavp-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
+        timestamp: Date.now(),
+        type: "trade",
+        message: `⚡ [PAVP Bot Trigger] ${latestSignal.label} confirmed on ${quote.symbol}! Auto-executing 1 Lot (${optSpec.lotSize} Qty) ${quote.symbol} ${optContract.strike} ${optContract.type} @ ${currencySym}${optContract.premiumAsk.toFixed(2)}. SL: ${currencySym}${latestSignal.sl}, TP1 (POC): ${currencySym}${latestSignal.tp1}.`,
+      };
+
+      const currentLogs = Array.isArray(state.auto_bot?.logs) ? state.auto_bot.logs : [];
+      const stateWithLog: DemoAccountState = {
+        ...state,
+        auto_bot: {
+          ...state.auto_bot,
+          logs: [botLog, ...currentLogs].slice(0, 50),
+        },
+      };
+
+      const tradeRes = executeDemoTrade(stateWithLog, {
+        symbol: quote.symbol,
+        type: latestSignal.action === "BUY CE" ? "BUY" : "SELL",
+        volume: 1.0, // 1 lot standard
+        quote,
+        sl: latestSignal.sl,
+        tp: latestSignal.tp1,
+        comment: latestSignal.label,
+        optionContractName: `${quote.symbol} ${optContract.strike} ${optContract.type}`,
+        optionType: optContract.type,
+        optionStrike: optContract.strike,
+        optionEntryPremium: optContract.premiumAsk,
+        lotSizeMultiplier: optSpec.lotSize,
+        currency: currencySym,
+      });
+
+      return tradeRes.state;
+    }
+  }
+
+  // 2. If no PAVP signal or on Global FX symbol, evaluate institutional alerts
+  if (!Array.isArray(alerts) || alerts.length === 0 || isIndianOrMCX) {
     return state;
   }
 
@@ -667,22 +891,10 @@ export function evaluateAutoBot(
   if (state.auto_bot.market_mode === "STRICT_REAL") {
     const marketCheck = isForexMarketOpen();
     if (!marketCheck.isOpen) {
-      return state; // Market closed for the weekend; Auto-Bot stands by
+      return state;
     }
   }
 
-  // Limit max concurrent open positions to 2 to strictly protect the $3,000 account
-  const openPositions = Array.isArray(state.open_positions) ? state.open_positions : [];
-  if (openPositions.length >= 2) {
-    return state;
-  }
-
-  if (!Array.isArray(alerts) || alerts.length === 0) {
-    return state;
-  }
-
-  // Find confirmed alerts (4H Breakout, AMD Judas, FVG, Order Block, Silver Bullet)
-  // Loop through all confirmed alerts to find one not already traded or on active symbol
   let targetAlert: InstitutionalAlert | null = null;
   let targetQuote: Quote | null = null;
 
@@ -695,17 +907,14 @@ export function evaluateAutoBot(
     const isSB = a.patternType === "ICT_SILVER_BULLET" && a.status === "CONFIRMED";
     if (!isAMD && !is4HBreakout && !isFVG && !isOB && !isSB) continue;
 
-    // Check if symbol already has an active open position
     const alreadyOpenOnSymbol = openPositions.some((p) => p.symbol === a.symbol);
     if (alreadyOpenOnSymbol) continue;
 
-    // Resolve matching quote for this alert with reliable fallback
     const resolvedQuote = allQuotes?.[a.symbol] || (quote?.symbol === a.symbol ? quote : null) || INITIAL_QUOTES[a.symbol];
     if (!resolvedQuote || typeof resolvedQuote.bid !== "number" || typeof resolvedQuote.ask !== "number") {
       continue;
     }
 
-    // Per-symbol cooldown: don't open trade on same symbol within 60s
     const recentlyTradedSymbol = openPositions.some(
       (p) => p.symbol === a.symbol && typeof p.time === "number" && Date.now() - p.time < 60000
     );
@@ -737,9 +946,7 @@ export function evaluateAutoBot(
       ? openPrice + 30.0
       : openPrice - 30.0;
 
-  // Standard fixed 0.02 lot sizing across all pairs (1:1000 leverage)
   const safeLot = 0.02;
-
   const patternLabel =
     targetAlert.patternType === "4H_BREAKOUT_RETEST"
       ? "4H Breakout & Retest"

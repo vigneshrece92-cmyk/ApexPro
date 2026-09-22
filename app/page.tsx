@@ -43,18 +43,18 @@ export default function TerminalDashboard() {
   // Client mount hydration guard
   const [isMounted, setIsMounted] = useState(false);
 
-  // Active State
-  const [activeSymbol, setActiveSymbol] = useState<AssetSymbol>("XAUUSD");
-  const [timeframe, setTimeframe] = useState<TimeFrame>("1h");
-  const [candles, setCandles] = useState<Candle[]>(() => generateRealisticCandles("XAUUSD", "1h", 120));
-  const [quote, setQuote] = useState<Quote>(INITIAL_QUOTES.XAUUSD);
+  // Active State - Default to NIFTY 5m Indian Options & Commodities Terminal
+  const [activeSymbol, setActiveSymbol] = useState<AssetSymbol>("NIFTY");
+  const [timeframe, setTimeframe] = useState<TimeFrame>("5m");
+  const [candles, setCandles] = useState<Candle[]>(() => generateRealisticCandles("NIFTY", "5m", 120));
+  const [quote, setQuote] = useState<Quote>(INITIAL_QUOTES.NIFTY);
   const [allQuotes, setAllQuotes] = useState<Record<AssetSymbol, Quote>>(INITIAL_QUOTES);
 
   // Institutional Alerts State (4H Breakout & Retest + AMD Radar)
   const [alerts, setAlerts] = useState<InstitutionalAlert[]>(() => getInitialInstitutionalAlerts());
   const [isAlertsHubOpen, setIsAlertsHubOpen] = useState(false);
 
-  // Internal Institutional Demo Broker State ($3,000 Balance - 100% Vercel Ready)
+  // Internal Institutional Demo Broker State (₹1,00,000 / $3,000 Balance - 100% Vercel Ready)
   const [demoAccount, setDemoAccount] = useState<DemoAccountState>(INITIAL_ACCOUNT_STATE);
   const notifiedTicketsRef = useRef<Set<number>>(new Set());
   const prevHistoryCountRef = useRef<number>(0);
@@ -81,8 +81,8 @@ export default function TerminalDashboard() {
 
   // AI Analysis State
   const [analysisResult, setAnalysisResult] = useState<AIAnalysisResult | null>(() => {
-    const c = generateRealisticCandles("XAUUSD", "1h", 120);
-    return generateTradeSignalFromData("XAUUSD", c, INITIAL_QUOTES.XAUUSD.pipPrecision);
+    const c = generateRealisticCandles("NIFTY", "5m", 120);
+    return generateTradeSignalFromData("NIFTY", c, INITIAL_QUOTES.NIFTY.pipPrecision);
   });
   const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
 
@@ -165,11 +165,16 @@ export default function TerminalDashboard() {
       for (const pos of demoAccount.open_positions) {
         if (pos?.ticket && !notifiedTicketsRef.current.has(pos.ticket)) {
           notifiedTicketsRef.current.add(pos.ticket);
+          const isIndian = ["NIFTY", "BANKNIFTY", "CRUDEOIL", "NATURALGAS", "FINNIFTY", "SENSEX"].includes(pos.symbol);
+          const curSym = pos.currency || (isIndian ? "₹" : "$");
           const openPrice = typeof pos.price_open === "number" ? pos.price_open.toFixed(2) : "0.00";
           const sl = typeof pos.sl === "number" ? pos.sl.toFixed(2) : "0.00";
           const tp = typeof pos.tp === "number" ? pos.tp.toFixed(2) : "0.00";
+          const contractDesc = pos.optionContractName
+            ? `${pos.optionContractName} (${pos.volume} Lot / ${pos.lotSizeMultiplier} Qty)`
+            : `${pos.type} ${pos.volume} ${pos.symbol}`;
           sendTelegramNotification(
-            `🤖 <b>ApexFX Auto-Bot Executed Setup</b>\n━━━━━━━━━━━━━━━━━━━━\n<b>Action:</b> ${pos.type} ${pos.volume} ${pos.symbol}\n<b>Open Price:</b> $${openPrice}\n<b>Stop Loss:</b> $${sl}\n<b>Take Profit:</b> $${tp}\n<b>Rationale:</b> ${pos.comment || "4H PO3 Setup"}\n<b>Ticket:</b> #${pos.ticket}\n<i>ApexFX Autonomous Engine • 1:1000 Lev</i>`
+            `🤖 <b>Apex Terminal PAVP Auto-Bot Executed</b>\n━━━━━━━━━━━━━━━━━━━━\n<b>Instrument:</b> ${contractDesc}\n<b>Entry:</b> ${curSym}${openPrice}\n<b>Stop Loss:</b> ${curSym}${sl}\n<b>Take Profit:</b> ${curSym}${tp}\n<b>Rationale:</b> ${pos.comment || "Pivot-Anchored Volume Profile (PAVP)"}\n<b>Ticket:</b> #${pos.ticket}\n<i>Apex Terminal Autonomous Options Engine</i>`
           ).catch((err) => console.warn("Telegram broadcast error:", err));
         }
       }
@@ -181,10 +186,12 @@ export default function TerminalDashboard() {
       const newClosed = historyList.slice(0, historyList.length - prevHistoryCountRef.current);
       for (const closed of newClosed) {
         if (closed?.ticket) {
+          const isIndian = ["NIFTY", "BANKNIFTY", "CRUDEOIL", "NATURALGAS", "FINNIFTY", "SENSEX"].includes(closed.symbol);
+          const curSym = closed.currency || (isIndian ? "₹" : "$");
           const profit = typeof closed.profit === "number" ? closed.profit : 0;
           const closePrice = typeof closed.price_close === "number" ? closed.price_close.toFixed(2) : "0.00";
           sendTelegramNotification(
-            `🎯 <b>ApexFX Position Exit</b>\n━━━━━━━━━━━━━━━━━━━━\n<b>Ticket:</b> #${closed.ticket} ${closed.type} ${closed.symbol}\n<b>Result:</b> ${profit >= 0 ? "🟢 Profit: +" : "🔴 Loss: "}$${Math.abs(profit).toFixed(2)}\n<b>Exit Reason:</b> ${closed.close_reason || "Market Exit"}\n<b>Close Price:</b> $${closePrice}\n<i>ApexFX Virtual Broker</i>`
+            `🎯 <b>Apex Terminal Position Exit</b>\n━━━━━━━━━━━━━━━━━━━━\n<b>Ticket:</b> #${closed.ticket} ${closed.optionContractName || closed.symbol}\n<b>Result:</b> ${profit >= 0 ? "🟢 Profit: +" : "🔴 Loss: "}${curSym}${Math.abs(profit).toFixed(2)}\n<b>Exit Reason:</b> ${closed.close_reason || "Market Exit"}\n<b>Close Price:</b> ${curSym}${closePrice}\n<i>Apex Terminal Virtual Broker</i>`
           ).catch((err) => console.warn("Telegram broadcast error:", err));
         }
       }
@@ -200,7 +207,7 @@ export default function TerminalDashboard() {
       setDemoAccount((prev) => {
         const ticked = tickDemoPositions(prev, quote);
         if (ticked?.auto_bot?.enabled) {
-          return evaluateAutoBot(ticked, quote, alerts, allQuotes);
+          return evaluateAutoBot(ticked, quote, alerts, allQuotes, candles);
         }
         return ticked;
       });
@@ -209,7 +216,7 @@ export default function TerminalDashboard() {
     runEngineTick();
     const heartbeat = setInterval(runEngineTick, 5000);
     return () => clearInterval(heartbeat);
-  }, [quote, alerts, allQuotes, isMounted]);
+  }, [quote, alerts, allQuotes, candles, isMounted]);
 
   const handleSaveApiKey = (key: string) => {
     setGeminiApiKey(key);
@@ -248,8 +255,9 @@ export default function TerminalDashboard() {
 
   // Trigger fetch on symbol or timeframe change
   useEffect(() => {
-    // Instantly generate proportional timeframe candles anchored to current quote so chart switches instantaneously
-    setCandles(generateRealisticCandles(activeSymbol, timeframe, 100, quote.bid));
+    const immediateQuote = allQuotes[activeSymbol] || INITIAL_QUOTES[activeSymbol] || quote;
+    setQuote(immediateQuote);
+    setCandles(generateRealisticCandles(activeSymbol, timeframe, 100, immediateQuote.bid));
     fetchMarketData(activeSymbol, timeframe);
 
     // Refresh quotes every 10s

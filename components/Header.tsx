@@ -80,8 +80,12 @@ export const Header: React.FC<HeaderProps> = ({
     }
   }, [externalQuotes]);
 
+  const isIndian = ["NIFTY", "BANKNIFTY", "CRUDEOIL", "NATURALGAS", "FINNIFTY", "SENSEX"].includes(activeSymbol);
+  const curSym = isIndian ? "₹" : "$";
   const macroSymbols: AssetSymbol[] = ["DXY", "US10Y"];
-  const tradingAssets: AssetSymbol[] = ["XAUUSD", "XAGUSD", "USDJPY", "GBPUSD", "EURUSD"];
+  const tradingAssets: AssetSymbol[] = isIndian
+    ? ["NIFTY", "BANKNIFTY", "CRUDEOIL", "NATURALGAS", "SENSEX"]
+    : ["XAUUSD", "XAGUSD", "USDJPY", "GBPUSD", "EURUSD"];
 
   return (
     <header className="sticky top-0 z-40 bg-terminal-bg/95 backdrop-blur border-b border-terminal-border">
@@ -148,7 +152,7 @@ export const Header: React.FC<HeaderProps> = ({
                   PRO
                 </span>
               </div>
-              <p className="text-[9px] sm:text-[10px] text-terminal-muted">Metals & Major FX</p>
+              <p className="text-[9px] sm:text-[10px] text-terminal-muted">{isIndian ? "Indian F&O & MCX Commodities" : "Metals & Major FX"}</p>
             </div>
           </div>
 
@@ -196,18 +200,18 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Action Buttons */}
         <div className="flex items-center gap-1 sm:gap-2 shrink-0">
-          {/* Internal Demo Broker Live Pill ($3,000 Balance - 100% Vercel Ready) */}
+          {/* Internal Demo Broker Live Pill */}
           {(onOpenDemoPanel || onOpenMT5Panel) && (
             <div className="flex items-center gap-1">
               <button
                 onClick={onOpenDemoPanel || onOpenMT5Panel}
                 className="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1.5 rounded-md bg-gradient-to-r from-emerald-950/70 to-teal-950/70 hover:from-emerald-900/80 hover:to-teal-900/80 text-emerald-300 border border-emerald-500/50 text-xs font-mono font-bold transition-all shadow-md shadow-emerald-500/10"
-                title="ApexFX Internal Demo Broker ($3,000) • 100% Vercel Ready • 4H PO3 Station"
+                title={isIndian ? "Apex Terminal Broker • PAVP Volume Profile Options Bot" : "ApexFX Internal Demo Broker • 100% Vercel Ready"}
               >
                 <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
                 <Zap className="w-3.5 h-3.5 text-emerald-400" />
                 <span>
-                  <span className="hidden xs:inline">Demo: </span>${(demoBalance ?? mt5Balance ?? 3000.0).toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
+                  <span className="hidden xs:inline">Demo: </span>{curSym}{(demoBalance ?? mt5Balance ?? (isIndian ? 100000 : 3000.0)).toLocaleString(isIndian ? "en-IN" : "en-US", { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
                 </span>
               </button>
 

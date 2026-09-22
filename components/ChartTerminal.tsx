@@ -5,7 +5,9 @@ import { AssetSymbol, TimeFrame, Candle, Quote } from "@/lib/types";
 import {
   computeTechnicals,
   calculateVolumeProfile,
+  calculatePivotAnchoredVolumeProfile,
   detectChartSignals,
+  detectPAVPSignals,
   calculateSessionLevels,
 } from "@/lib/technicals";
 import {
@@ -26,6 +28,8 @@ import {
   Clock,
   Compass,
   Target,
+  Anchor,
+  Flame,
 } from "lucide-react";
 
 interface ChartTerminalProps {
@@ -55,27 +59,32 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
   const livePriceLineRef = useRef<any>(null);
   const lastCandleRef = useRef<Candle | null>(null);
 
+  // Market mode: Indian Options (Default) vs Global FX
+  const [marketTab, setMarketTab] = useState<"INDIAN" | "GLOBAL">("INDIAN");
+
   // Mode: "smart" (Professional Interactive Lightweight Canvas with VP, SMC, Signals) or "tradingview" (External Iframe)
   const [chartMode, setChartMode] = useState<"tradingview" | "smart">("smart");
 
   // Indicator & SMC Overlays - Clean professional defaults
   const [showEMA, setShowEMA] = useState<boolean>(true);
-  const [showSR, setShowSR] = useState<boolean>(true);
+  const [showSR, setShowSR] = useState<boolean>(false);
   const [showFib, setShowFib] = useState<boolean>(false);
-  const [showPD, setShowPD] = useState<boolean>(true);
+  const [showPD, setShowPD] = useState<boolean>(false);
   const [showOB, setShowOB] = useState<boolean>(false);
   const [showFVG, setShowFVG] = useState<boolean>(false);
-  const [showRSI, setShowRSI] = useState<boolean>(false);
-  const [showVP, setShowVP] = useState<boolean>(true); // Volume Profile (VAH, VAL, POC)
-  const [showSignals, setShowSignals] = useState<boolean>(true); // In-chart BUY / SELL signals
+  const [showVP, setShowVP] = useState<boolean>(true); // Pivot-Anchored Volume Profile (POC, VAH, VAL)
+  const [showVWCB, setShowVWCB] = useState<boolean>(true); // Volume Weighted Colored Bars
+  const [showSignals, setShowSignals] = useState<boolean>(true); // In-chart BUY / SELL signals (strictly VP)
   const [showPDHL, setShowPDHL] = useState<boolean>(true); // Previous Day High & Low (PDH / PDL)
   const [showORB, setShowORB] = useState<boolean>(true); // Opening Range High & Low (ORB 15M/30M)
   const [showAsia, setShowAsia] = useState<boolean>(false); // Asian Session High & Low (Asia H / Asia L)
   const [showDO, setShowDO] = useState<boolean>(false); // Daily Open (DO)
+  const [showPAVPPanel, setShowPAVPPanel] = useState<boolean>(true); // PAVP HUD Drawer
+  const [showLevelDrawer, setShowLevelDrawer] = useState<boolean>(false); // SMC Level Drawer
+  const [showRSI, setShowRSI] = useState<boolean>(false); // RSI Sub-Panel
 
   // SMC Level Copy Feedback and Radar Drawer
   const [copiedLevel, setCopiedLevel] = useState<string | null>(null);
-  const [showLevelDrawer, setShowLevelDrawer] = useState<boolean>(false);
 
   const copyToClipboard = (text: string, label: string) => {
     if (typeof navigator !== "undefined") {
@@ -92,14 +101,17 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
 
   const smc = technicals.smc;
 
-  // Institutional Volume Profile & In-Chart Directional Signals
-  const volumeProfile = React.useMemo(() => {
-    return technicals.volumeProfile || calculateVolumeProfile(candles, 32, 0.70, quote.pipPrecision);
-  }, [technicals.volumeProfile, candles, quote.pipPrecision]);
+  // Institutional Pivot-Anchored Volume Profile (PineScript v6 dgtrd PAVP)
+  const pavp = React.useMemo(() => {
+    return technicals.pavp || calculatePivotAnchoredVolumeProfile(candles, 15, 28, 0.68, quote.pipPrecision);
+  }, [technicals.pavp, candles, quote.pipPrecision]);
 
-  const chartSignals = React.useMemo(() => {
-    return detectChartSignals(candles, volumeProfile, quote.pipPrecision);
-  }, [candles, volumeProfile, quote.pipPrecision]);
+  // Volume Profile (VAH, VAL, POC) Signals (strictly VP)
+  const pavpSignalResult = React.useMemo(() => {
+    return detectPAVPSignals(candles, pavp, activeSymbol, quote.pipPrecision);
+  }, [candles, pavp, activeSymbol, quote.pipPrecision]);
+
+  const chartSignals = pavpSignalResult.markers;
 
   // Institutional Session Liquidity (PDH/PDL, ORB, Asia H/L, Daily Open)
   const sessionLevels = React.useMemo(() => {
@@ -200,37 +212,49 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
         candleSeries.setMarkers(chartSignals);
       }
 
-      // Volume Profile Levels (POC, VAH 70%, VAL 70%)
-      if (showVP && volumeProfile && volumeProfile.poc > 0) {
-        // Point of Control (Highest Volume Node)
+      // Pivot-Anchored Volume Profile Levels (PAVP: POC, VAH 68%, VAL 68%)
+      if (showVP && pavp && pavp.poc > 0) {
+        // Point of Control (Highest Volume Node - Red #EF4444)
         candleSeries.createPriceLine({
-          price: volumeProfile.poc,
-          color: "#F43F5E",
+          price: pavp.poc,
+          color: "#EF4444",
           lineWidth: 2,
           lineStyle: lwc.LineStyle.Solid,
           axisLabelVisible: true,
-          title: `POC ${volumeProfile.poc}`,
+          title: `POC ${pavp.poc}`,
         });
 
-        // Value Area High (70% Volume Boundary)
+        // Value Area High (68% Volume Boundary - Institutional Blue #2563EB)
         candleSeries.createPriceLine({
-          price: volumeProfile.vah,
-          color: "#38BDF8",
+          price: pavp.vah,
+          color: "#2563EB",
           lineWidth: 1.5,
           lineStyle: lwc.LineStyle.Dashed,
           axisLabelVisible: true,
-          title: `VAH ${volumeProfile.vah}`,
+          title: `VAH ${pavp.vah}`,
         });
 
-        // Value Area Low (70% Volume Boundary)
+        // Value Area Low (68% Volume Boundary - Institutional Blue #2563EB)
         candleSeries.createPriceLine({
-          price: volumeProfile.val,
-          color: "#10B981",
+          price: pavp.val,
+          color: "#2563EB",
           lineWidth: 1.5,
           lineStyle: lwc.LineStyle.Dashed,
           axisLabelVisible: true,
-          title: `VAL ${volumeProfile.val}`,
+          title: `VAL ${pavp.val}`,
         });
+
+        // Anchor Pivot Point Line
+        if (pavp.pivot) {
+          candleSeries.createPriceLine({
+            price: pavp.pivot.price,
+            color: "#A855F7",
+            lineWidth: 1,
+            lineStyle: lwc.LineStyle.Dotted,
+            axisLabelVisible: true,
+            title: `⚓ PAVP ANCHOR (${pavp.pivot.type.toUpperCase()} ${pavp.pivot.price})`,
+          });
+        }
       }
 
       // Smooth EMAs without raw price scribbles
@@ -448,9 +472,9 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
     showORB,
     showAsia,
     showDO,
-    volumeProfile.poc,
-    volumeProfile.vah,
-    volumeProfile.val,
+    pavp.poc,
+    pavp.vah,
+    pavp.val,
     sessionLevels.pdh,
     sessionLevels.pdl,
     sessionLevels.orbHigh,
@@ -567,16 +591,35 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
   };
 
   const timeframes: TimeFrame[] = ["1m", "5m", "15m", "1h", "4h", "1d"];
-  const assets: { sym: AssetSymbol; label: string }[] = [
-    { sym: "XAUUSD", label: "GOLD (XAU/USD)" },
-    { sym: "XAGUSD", label: "SILVER (XAG/USD)" },
-    { sym: "USDJPY", label: "USD/JPY" },
-    { sym: "GBPUSD", label: "GBP/USD" },
-    { sym: "EURUSD", label: "EUR/USD" },
+
+  const indianAssets: { sym: AssetSymbol; label: string; badge: string }[] = [
+    { sym: "NIFTY", label: "NIFTY 50", badge: "F&O" },
+    { sym: "BANKNIFTY", label: "BANK NIFTY", badge: "F&O" },
+    { sym: "CRUDEOIL", label: "CRUDE OIL", badge: "MCX" },
+    { sym: "NATURALGAS", label: "NATURAL GAS", badge: "MCX" },
+    { sym: "SENSEX", label: "SENSEX", badge: "BSE" },
+    { sym: "FINNIFTY", label: "FIN NIFTY", badge: "F&O" },
   ];
+
+  const globalAssets: { sym: AssetSymbol; label: string; badge: string }[] = [
+    { sym: "XAUUSD", label: "GOLD", badge: "Spot" },
+    { sym: "XAGUSD", label: "SILVER", badge: "Spot" },
+    { sym: "EURUSD", label: "EUR/USD", badge: "FX" },
+    { sym: "GBPUSD", label: "GBP/USD", badge: "FX" },
+    { sym: "USDJPY", label: "USD/JPY", badge: "FX" },
+  ];
+
+  const isCurrentIndian = ["NIFTY", "BANKNIFTY", "CRUDEOIL", "NATURALGAS", "SENSEX", "FINNIFTY"].includes(activeSymbol);
+  const currentAssets = marketTab === "INDIAN" ? indianAssets : globalAssets;
 
   const getTradingViewSymbol = (sym: AssetSymbol): string => {
     switch (sym) {
+      case "NIFTY": return "NSE:NIFTY";
+      case "BANKNIFTY": return "NSE:BANKNIFTY";
+      case "CRUDEOIL": return "MCX:CRUDEOIL1!";
+      case "NATURALGAS": return "MCX:NATURALGAS1!";
+      case "SENSEX": return "BSE:SENSEX";
+      case "FINNIFTY": return "NSE:FINNIFTY";
       case "XAUUSD": return "OANDA:XAUUSD";
       case "XAGUSD": return "OANDA:XAGUSD";
       case "EURUSD": return "FX:EURUSD";
@@ -584,7 +627,7 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
       case "USDJPY": return "FX:USDJPY";
       case "DXY": return "CAPITALCOM:DXY";
       case "US10Y": return "TVC:US10Y";
-      default: return "OANDA:XAUUSD";
+      default: return "NSE:NIFTY";
     }
   };
 
@@ -596,7 +639,7 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
       case "1h": return "60";
       case "4h": return "240";
       case "1d": return "D";
-      default: return "60";
+      default: return "5";
     }
   };
 
@@ -609,23 +652,55 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
   return (
     <div className="flex flex-col h-full bg-terminal-card border border-terminal-border rounded-lg overflow-hidden shadow-xl">
       {/* Top Action & Indicator Header */}
-      <div className="flex flex-wrap items-center justify-between p-2.5 bg-[#0D121D] border-b border-terminal-border gap-2">
-        {/* Left: Asset Select & Current Quote */}
-        <div className="flex items-center gap-2">
-          <div className="flex items-center bg-terminal-bg rounded p-0.5 border border-terminal-border">
-            {assets.map((item) => (
+      <div className="flex flex-wrap items-center justify-between p-2 bg-[#0D121D] border-b border-terminal-border gap-2">
+        {/* Left: Market Mode & Asset Select */}
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {/* Market Tab Switcher */}
+          <div className="flex items-center bg-[#070A10] rounded p-0.5 border border-terminal-border">
+            <button
+              onClick={() => {
+                setMarketTab("INDIAN");
+                if (!isCurrentIndian) onSelectSymbol("NIFTY");
+              }}
+              className={`px-2 py-0.5 text-[11px] font-bold rounded flex items-center gap-1 transition-all ${
+                marketTab === "INDIAN"
+                  ? "bg-amber-500/20 text-amber-300 border border-amber-500/50 shadow-sm"
+                  : "text-terminal-muted hover:text-gray-300"
+              }`}
+            >
+              <span>🇮🇳 Indian F&O & MCX</span>
+            </button>
+            <button
+              onClick={() => {
+                setMarketTab("GLOBAL");
+                if (isCurrentIndian) onSelectSymbol("XAUUSD");
+              }}
+              className={`px-2 py-0.5 text-[11px] font-bold rounded flex items-center gap-1 transition-all ${
+                marketTab === "GLOBAL"
+                  ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/50 shadow-sm"
+                  : "text-terminal-muted hover:text-gray-300"
+              }`}
+            >
+              <span>🌐 Global FX</span>
+            </button>
+          </div>
+
+          {/* Symbol Select Pills */}
+          <div className="flex items-center bg-terminal-bg rounded p-0.5 border border-terminal-border overflow-x-auto">
+            {currentAssets.map((item) => (
               <button
                 key={item.sym}
                 onClick={() => onSelectSymbol(item.sym)}
-                className={`px-2 py-1 text-xs font-semibold rounded transition-all ${
+                className={`px-2 py-0.5 text-xs font-semibold rounded flex items-center gap-1 transition-all ${
                   activeSymbol === item.sym
-                    ? item.sym.includes("XAU")
-                      ? "bg-gold/20 text-gold border border-gold/40 shadow-sm"
-                      : "bg-blue-500/20 text-cyan-300 border border-cyan-500/40"
+                    ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/50 shadow-sm font-bold"
                     : "text-terminal-muted hover:text-gray-200"
                 }`}
               >
-                {item.sym}
+                <span>{item.label}</span>
+                <span className="text-[9px] px-1 py-0.2 rounded bg-black/40 text-terminal-muted border border-white/5">
+                  {item.badge}
+                </span>
               </button>
             ))}
           </div>
@@ -779,7 +854,7 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
               <span>Order Block</span>
             </button>
 
-            {/* Volume Profile (VAH, VAL, POC) */}
+            {/* Volume Profile (PAVP: VAH, VAL, POC) */}
             <button
               onClick={() => setShowVP(!showVP)}
               className={`px-2 py-0.5 rounded text-[10px] font-bold border transition-all flex items-center gap-1 ${
@@ -787,13 +862,13 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
                   ? "bg-rose-500/20 text-rose-300 border-rose-500/40 shadow-sm"
                   : "bg-terminal-bg text-terminal-muted border-terminal-border"
               }`}
-              title="Toggle Volume Profile (Point of Control, Value Area High 70%, Value Area Low 70%)"
+              title="Toggle Pivot-Anchored Volume Profile (POC Red, VAH Blue, VAL Blue, Anchor Purple)"
             >
               <BarChart2 className="w-2.5 h-2.5 text-rose-400" />
-              <span>VP (POC/VAH/VAL)</span>
+              <span>PAVP (POC/VAH/VAL)</span>
             </button>
 
-            {/* In-Chart Buy / Sell Directional Signals */}
+            {/* In-Chart Buy / Sell Directional Signals (Strictly Volume Profile) */}
             <button
               onClick={() => setShowSignals(!showSignals)}
               className={`px-2 py-0.5 rounded text-[10px] font-bold border transition-all flex items-center gap-1 ${
@@ -801,10 +876,38 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
                   ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40 shadow-sm"
                   : "bg-terminal-bg text-terminal-muted border-terminal-border"
               }`}
-              title="Toggle In-Chart BUY and SELL execution arrows and labels"
+              title="Toggle Strictly Volume Profile Signals (BUY CE @ VAL, BUY PE @ VAH, Retest @ POC)"
             >
               <TrendingUp className="w-2.5 h-2.5 text-emerald-400" />
-              <span>Signals (BUY/SELL)</span>
+              <span>VP Signals (CE/PE)</span>
+            </button>
+
+            {/* VWCB (Volume Weighted Colored Bars) */}
+            <button
+              onClick={() => setShowVWCB(!showVWCB)}
+              className={`px-2 py-0.5 rounded text-[10px] font-bold border transition-all flex items-center gap-1 ${
+                showVWCB
+                  ? "bg-orange-500/20 text-orange-300 border-orange-500/40 shadow-sm"
+                  : "bg-terminal-bg text-terminal-muted border-terminal-border"
+              }`}
+              title="Toggle Volume Weighted Colored Bars (dgtrd VWCB: vol > 89 SMA * 1.618)"
+            >
+              <Flame className="w-2.5 h-2.5 text-orange-400" />
+              <span>VWCB Spikes</span>
+            </button>
+
+            {/* PAVP HUD Drawer Toggle */}
+            <button
+              onClick={() => setShowPAVPPanel(!showPAVPPanel)}
+              className={`px-2 py-0.5 rounded text-[10px] font-bold border transition-all flex items-center gap-1 ${
+                showPAVPPanel
+                  ? "bg-purple-500/20 text-purple-300 border-purple-500/40 shadow-sm"
+                  : "bg-terminal-bg text-terminal-muted border-terminal-border"
+              }`}
+              title="Toggle Pivot-Anchored Volume Profile HUD & Histogram"
+            >
+              <Anchor className="w-2.5 h-2.5 text-purple-400" />
+              <span>PAVP HUD</span>
             </button>
 
             {/* PDH / PDL Toggle */}
@@ -994,7 +1097,7 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
           {smc && (
             <button
               onClick={() => {
-                const text = `ApexFX ${activeSymbol} Institutional Levels:\n- Current Bid: ${quote.bid}\n- PDH (Previous Day High): ${sessionLevels.pdh}\n- PDL (Previous Day Low): ${sessionLevels.pdl}\n- ORB High: ${sessionLevels.orbHigh}\n- ORB Low: ${sessionLevels.orbLow}\n- Daily Open: ${sessionLevels.dailyOpen}\n- Volume Profile POC: ${volumeProfile.poc}\n- VAH (70%): ${volumeProfile.vah}\n- VAL (70%): ${volumeProfile.val}\n- 50% Equilibrium: ${smc.equilibriumPrice}\n- ICT Regime: ${smc.zone}`;
+                const text = `ApexFX ${activeSymbol} Institutional Levels:\n- Current Bid: ${quote.bid}\n- PDH (Previous Day High): ${sessionLevels.pdh}\n- PDL (Previous Day Low): ${sessionLevels.pdl}\n- ORB High: ${sessionLevels.orbHigh}\n- ORB Low: ${sessionLevels.orbLow}\n- Daily Open: ${sessionLevels.dailyOpen}\n- Volume Profile POC: ${pavp.poc}\n- VAH (68%): ${pavp.vah}\n- VAL (68%): ${pavp.val}\n- 50% Equilibrium: ${smc.equilibriumPrice}\n- ICT Regime: ${smc.zone}`;
                 copyToClipboard(text, "ALL");
               }}
               className="px-2 py-0.5 rounded bg-terminal-card hover:bg-terminal-hover border border-terminal-border text-[10px] text-gray-300 hover:text-white flex items-center gap-1 transition-all"
@@ -1110,30 +1213,94 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
           <>
             <div ref={chartContainerRef} className="w-full h-full min-h-[460px]" />
 
-            {/* Volume Profile Visual Distribution Overlay (Right edge histogram) */}
-            {showVP && volumeProfile && volumeProfile.bins.length > 0 && (
-              <div className="absolute top-12 right-14 bottom-8 w-28 pointer-events-none flex flex-col-reverse justify-between opacity-80 z-10">
+            {/* Pivot-Anchored Volume Profile Visual Distribution Overlay (Right edge histogram) */}
+            {showVP && pavp && pavp.rows.length > 0 && (
+              <div className="absolute top-12 right-14 bottom-8 w-28 pointer-events-none flex flex-col-reverse justify-between opacity-85 z-10">
                 {(() => {
-                  const maxVol = Math.max(...volumeProfile.bins.map((b) => b.volume), 1);
-                  return volumeProfile.bins.map((bin, idx) => {
-                    const isPOC = Math.abs(bin.price - volumeProfile.poc) < (Math.abs(volumeProfile.vah - volumeProfile.val) / (volumeProfile.bins.length || 1));
-                    const widthPct = Math.max(8, Math.round((bin.volume / maxVol) * 100));
+                  const maxVol = Math.max(...pavp.rows.map((r) => r.volume), 1);
+                  return pavp.rows.map((row, idx) => {
+                    const widthPct = Math.max(8, Math.round((row.volume / maxVol) * 100));
                     return (
                       <div key={idx} className="w-full flex items-center justify-end h-full">
                         <div
                           style={{ width: `${widthPct}%` }}
                           className={`h-[2px] transition-all rounded-l ${
-                            isPOC
-                              ? "bg-[#F43F5E] shadow-[0_0_6px_rgba(244,63,94,0.8)] h-[3px]"
-                              : bin.isValueArea
-                              ? "bg-[#38BDF8]/60"
-                              : "bg-[#475569]/30"
+                            row.isPOC
+                              ? "bg-[#EF4444] shadow-[0_0_8px_rgba(239,68,68,0.9)] h-[3.5px]"
+                              : row.isValueArea
+                              ? "bg-[#2563EB]/70 h-[2.5px]"
+                              : "bg-[#475569]/35"
                           }`}
                         />
                       </div>
                     );
                   });
                 })()}
+              </div>
+            )}
+
+            {/* Floating Pivot-Anchored Volume Profile (PAVP) HUD Card */}
+            {showPAVPPanel && pavp && pavp.poc > 0 && (
+              <div className="absolute top-3 right-3 z-20 w-64 bg-[#0A0E17]/95 backdrop-blur-md p-3 rounded-lg border border-terminal-border/90 shadow-2xl space-y-2 text-xs font-mono">
+                <div className="flex items-center justify-between pb-1.5 border-b border-terminal-border/60">
+                  <div className="flex items-center gap-1.5 font-bold text-white">
+                    <Anchor className="w-3.5 h-3.5 text-purple-400" />
+                    <span className="text-[11px]">PAVP Anchor & Key Levels</span>
+                  </div>
+                  <span className="px-1.5 py-0.5 text-[9px] font-bold rounded bg-purple-500/20 text-purple-300 border border-purple-500/40">
+                    68% VA
+                  </span>
+                </div>
+
+                <div className="space-y-1.5 text-[10px]">
+                  {pavp.pivot && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-terminal-muted">Pivot Anchor:</span>
+                      <span className="text-purple-300 font-bold">
+                        {pavp.pivot.type.toUpperCase()} @ {pavp.pivot.price}
+                      </span>
+                    </div>
+                  )}
+
+                  <div className="flex items-center justify-between">
+                    <span className="text-terminal-muted">POC (Magnet):</span>
+                    <button
+                      onClick={() => copyToClipboard(pavp.poc.toString(), "POC")}
+                      className="text-[#EF4444] font-bold hover:underline flex items-center gap-1"
+                    >
+                      <span>{pavp.poc}</span>
+                      {copiedLevel === "POC" && <Check className="w-2.5 h-2.5 text-bull" />}
+                    </button>
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <span className="text-terminal-muted">VAH (Resistance):</span>
+                    <button
+                      onClick={() => copyToClipboard(pavp.vah.toString(), "VAH")}
+                      className="text-[#2563EB] font-bold hover:underline flex items-center gap-1"
+                    >
+                      <span>{pavp.vah}</span>
+                      {copiedLevel === "VAH" && <Check className="w-2.5 h-2.5 text-bull" />}
+                    </button>
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <span className="text-terminal-muted">VAL (Support):</span>
+                    <button
+                      onClick={() => copyToClipboard(pavp.val.toString(), "VAL")}
+                      className="text-[#2563EB] font-bold hover:underline flex items-center gap-1"
+                    >
+                      <span>{pavp.val}</span>
+                      {copiedLevel === "VAL" && <Check className="w-2.5 h-2.5 text-bull" />}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="pt-1.5 border-t border-terminal-border/60 text-[9px] text-terminal-muted space-y-0.5">
+                  <div className="text-gray-300 font-bold">🎯 Auto-Bot Strategy:</div>
+                  <div className="text-emerald-400">⚡ Dip to VAL → BUY CE (Target POC/VAH)</div>
+                  <div className="text-rose-400">⚡ Push to VAH → BUY PE (Target POC/VAL)</div>
+                </div>
               </div>
             )}
 
@@ -1150,19 +1317,19 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
                 <span>REALTIME</span>
               </div>
 
-              {showVP && volumeProfile && volumeProfile.poc > 0 && (
+              {showVP && pavp && pavp.poc > 0 && (
                 <>
                   <div className="flex items-center gap-1 text-[10px]">
-                    <span className="w-2 h-0.5 bg-[#F43F5E]"></span>
-                    <span className="text-[#F43F5E] font-bold">POC: {volumeProfile.poc}</span>
+                    <span className="w-2 h-0.5 bg-[#EF4444]"></span>
+                    <span className="text-[#EF4444] font-bold">POC: {pavp.poc}</span>
                   </div>
                   <div className="flex items-center gap-1 text-[10px]">
-                    <span className="w-2 h-0.5 bg-[#38BDF8]"></span>
-                    <span className="text-[#38BDF8] font-bold">VAH: {volumeProfile.vah}</span>
+                    <span className="w-2 h-0.5 bg-[#2563EB]"></span>
+                    <span className="text-[#2563EB] font-bold">VAH: {pavp.vah}</span>
                   </div>
                   <div className="flex items-center gap-1 text-[10px]">
-                    <span className="w-2 h-0.5 bg-[#10B981]"></span>
-                    <span className="text-[#10B981] font-bold">VAL: {volumeProfile.val}</span>
+                    <span className="w-2 h-0.5 bg-[#2563EB]"></span>
+                    <span className="text-[#2563EB] font-bold">VAL: {pavp.val}</span>
                   </div>
                 </>
               )}
@@ -1226,10 +1393,10 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
                     </div>
                   </>
                 )}
-                {volumeProfile && volumeProfile.poc > 0 && (
+                {pavp && pavp.poc > 0 && (
                   <div className="flex items-center gap-1">
                     <span className="text-terminal-muted">POC:</span>
-                    <span className="text-[#F43F5E] font-bold">{volumeProfile.poc}</span>
+                    <span className="text-[#F43F5E] font-bold">{pavp.poc}</span>
                   </div>
                 )}
               </div>

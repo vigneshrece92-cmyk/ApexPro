@@ -12,6 +12,108 @@ import {
 } from "./types";
 
 export const INITIAL_QUOTES: Record<AssetSymbol, Quote> = {
+  NIFTY: {
+    symbol: "NIFTY",
+    name: "NIFTY 50 Index (NSE F&O)",
+    category: "Indian Index",
+    bid: 23329.00,
+    ask: 23330.50,
+    spread: 1.5,
+    change24h: 0.42,
+    high24h: 23410.00,
+    low24h: 23280.00,
+    pipPrecision: 2,
+    pipMultiplier: 1,
+    lotSize: 25,
+    strikeStep: 50,
+    currency: "₹",
+    lastUpdate: Date.now(),
+  },
+  BANKNIFTY: {
+    symbol: "BANKNIFTY",
+    name: "BANK NIFTY Index (NSE F&O)",
+    category: "Indian Index",
+    bid: 56215.50,
+    ask: 56218.00,
+    spread: 2.5,
+    change24h: 0.65,
+    high24h: 56450.00,
+    low24h: 55980.00,
+    pipPrecision: 2,
+    pipMultiplier: 1,
+    lotSize: 15,
+    strikeStep: 100,
+    currency: "₹",
+    lastUpdate: Date.now(),
+  },
+  CRUDEOIL: {
+    symbol: "CRUDEOIL",
+    name: "CRUDE OIL (MCX Futures)",
+    category: "MCX Commodity",
+    bid: 7660.00,
+    ask: 7662.00,
+    spread: 2.0,
+    change24h: -0.85,
+    high24h: 7720.00,
+    low24h: 7610.00,
+    pipPrecision: 2,
+    pipMultiplier: 1,
+    lotSize: 100,
+    strikeStep: 50,
+    currency: "₹",
+    lastUpdate: Date.now(),
+  },
+  NATURALGAS: {
+    symbol: "NATURALGAS",
+    name: "NATURAL GAS (MCX Futures)",
+    category: "MCX Commodity",
+    bid: 258.20,
+    ask: 258.50,
+    spread: 0.3,
+    change24h: 1.25,
+    high24h: 264.50,
+    low24h: 254.10,
+    pipPrecision: 2,
+    pipMultiplier: 10,
+    lotSize: 1250,
+    strikeStep: 5,
+    currency: "₹",
+    lastUpdate: Date.now(),
+  },
+  SENSEX: {
+    symbol: "SENSEX",
+    name: "BSE SENSEX Index (F&O)",
+    category: "Indian Index",
+    bid: 74529.00,
+    ask: 74533.00,
+    spread: 4.0,
+    change24h: 0.38,
+    high24h: 74800.00,
+    low24h: 74350.00,
+    pipPrecision: 2,
+    pipMultiplier: 1,
+    lotSize: 10,
+    strikeStep: 100,
+    currency: "₹",
+    lastUpdate: Date.now(),
+  },
+  FINNIFTY: {
+    symbol: "FINNIFTY",
+    name: "NIFTY FINANCIAL SERVICES",
+    category: "Indian Index",
+    bid: 24520.00,
+    ask: 24522.50,
+    spread: 2.5,
+    change24h: 0.52,
+    high24h: 24650.00,
+    low24h: 24410.00,
+    pipPrecision: 2,
+    pipMultiplier: 1,
+    lotSize: 25,
+    strikeStep: 50,
+    currency: "₹",
+    lastUpdate: Date.now(),
+  },
   XAUUSD: {
     symbol: "XAUUSD",
     name: "Gold / US Dollar",
@@ -24,6 +126,8 @@ export const INITIAL_QUOTES: Record<AssetSymbol, Quote> = {
     low24h: 4341.20,
     pipPrecision: 2,
     pipMultiplier: 10,
+    lotSize: 1,
+    currency: "$",
     lastUpdate: Date.now(),
   },
   XAGUSD: {
@@ -38,6 +142,8 @@ export const INITIAL_QUOTES: Record<AssetSymbol, Quote> = {
     low24h: 66.55,
     pipPrecision: 3,
     pipMultiplier: 100,
+    lotSize: 1,
+    currency: "$",
     lastUpdate: Date.now(),
   },
   EURUSD: {
@@ -52,6 +158,8 @@ export const INITIAL_QUOTES: Record<AssetSymbol, Quote> = {
     low24h: 1.1478,
     pipPrecision: 5,
     pipMultiplier: 10000,
+    lotSize: 1,
+    currency: "$",
     lastUpdate: Date.now(),
   },
   GBPUSD: {
@@ -66,6 +174,8 @@ export const INITIAL_QUOTES: Record<AssetSymbol, Quote> = {
     low24h: 1.3375,
     pipPrecision: 5,
     pipMultiplier: 10000,
+    lotSize: 1,
+    currency: "$",
     lastUpdate: Date.now(),
   },
   USDJPY: {
@@ -80,6 +190,8 @@ export const INITIAL_QUOTES: Record<AssetSymbol, Quote> = {
     low24h: 156.50,
     pipPrecision: 3,
     pipMultiplier: 100,
+    lotSize: 1,
+    currency: "$",
     lastUpdate: Date.now(),
   },
   DXY: {
@@ -94,6 +206,8 @@ export const INITIAL_QUOTES: Record<AssetSymbol, Quote> = {
     low24h: 100.16,
     pipPrecision: 2,
     pipMultiplier: 100,
+    lotSize: 1,
+    currency: "$",
     lastUpdate: Date.now(),
   },
   US10Y: {
@@ -108,6 +222,8 @@ export const INITIAL_QUOTES: Record<AssetSymbol, Quote> = {
     low24h: 4.945,
     pipPrecision: 3,
     pipMultiplier: 100,
+    lotSize: 1,
+    currency: "$",
     lastUpdate: Date.now(),
   },
 };
@@ -368,6 +484,51 @@ export const PROP_FIRM_PROFILES: PropFirmProfile[] = [
 
 // Timeframe-specific ATR / bar volatility configuration
 function getTimeframeVol(symbol: AssetSymbol, timeframe: string): number {
+  if (symbol === "NIFTY" || symbol === "FINNIFTY") {
+    if (timeframe === "1m") return 12.0;
+    if (timeframe === "5m") return 24.0;
+    if (timeframe === "15m") return 48.0;
+    if (timeframe === "1h") return 110.0;
+    if (timeframe === "4h") return 220.0;
+    return 350.0; // 1d
+  }
+
+  if (symbol === "BANKNIFTY") {
+    if (timeframe === "1m") return 35.0;
+    if (timeframe === "5m") return 70.0;
+    if (timeframe === "15m") return 140.0;
+    if (timeframe === "1h") return 280.0;
+    if (timeframe === "4h") return 550.0;
+    return 850.0; // 1d
+  }
+
+  if (symbol === "SENSEX") {
+    if (timeframe === "1m") return 45.0;
+    if (timeframe === "5m") return 90.0;
+    if (timeframe === "15m") return 180.0;
+    if (timeframe === "1h") return 360.0;
+    if (timeframe === "4h") return 700.0;
+    return 1100.0; // 1d
+  }
+
+  if (symbol === "CRUDEOIL") {
+    if (timeframe === "1m") return 4.5;
+    if (timeframe === "5m") return 12.0;
+    if (timeframe === "15m") return 26.0;
+    if (timeframe === "1h") return 60.0;
+    if (timeframe === "4h") return 110.0;
+    return 200.0; // 1d
+  }
+
+  if (symbol === "NATURALGAS") {
+    if (timeframe === "1m") return 0.4;
+    if (timeframe === "5m") return 1.1;
+    if (timeframe === "15m") return 2.6;
+    if (timeframe === "1h") return 6.0;
+    if (timeframe === "4h") return 12.0;
+    return 22.0; // 1d
+  }
+
   const isGold = symbol === "XAUUSD";
   const isSilver = symbol === "XAGUSD";
   const isJpy = symbol === "USDJPY";
