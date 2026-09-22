@@ -63,7 +63,7 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
   // Mode: "smart" (Professional Interactive Lightweight Canvas with VP, SMC, Signals) or "tradingview" (External Iframe)
   const [chartMode, setChartMode] = useState<"tradingview" | "smart">("smart");
 
-  // Indicator & SMC Overlays - Clean professional defaults
+  // Indicator & SMC Overlays - Clean professional defaults (Pure PAVP by default)
   const [showEMA, setShowEMA] = useState<boolean>(true);
   const [showSR, setShowSR] = useState<boolean>(false);
   const [showFib, setShowFib] = useState<boolean>(false);
@@ -73,8 +73,8 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
   const [showVP, setShowVP] = useState<boolean>(true); // Pivot-Anchored Volume Profile (POC, VAH, VAL)
   const [showVWCB, setShowVWCB] = useState<boolean>(true); // Volume Weighted Colored Bars
   const [showSignals, setShowSignals] = useState<boolean>(true); // In-chart BUY / SELL signals (strictly VP)
-  const [showPDHL, setShowPDHL] = useState<boolean>(true); // Previous Day High & Low (PDH / PDL)
-  const [showORB, setShowORB] = useState<boolean>(true); // Opening Range High & Low (ORB 15M/30M)
+  const [showPDHL, setShowPDHL] = useState<boolean>(false); // Previous Day High & Low (PDH / PDL)
+  const [showORB, setShowORB] = useState<boolean>(false); // Opening Range High & Low (ORB 15M/30M)
   const [showAsia, setShowAsia] = useState<boolean>(false); // Asian Session High & Low (Asia H / Asia L)
   const [showDO, setShowDO] = useState<boolean>(false); // Daily Open (DO)
   const [showPAVPPanel, setShowPAVPPanel] = useState<boolean>(true); // PAVP HUD Drawer
@@ -167,10 +167,14 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
           borderColor: "rgba(255, 255, 255, 0.08)",
           timeVisible: true,
           secondsVisible: false,
+          barSpacing: 9,
+          minBarSpacing: 5,
+          rightOffset: 8,
         },
         rightPriceScale: {
           borderColor: "rgba(255, 255, 255, 0.08)",
-          scaleMargins: { top: 0.10, bottom: 0.12 },
+          scaleMargins: { top: 0.12, bottom: 0.12 },
+          autoScale: true,
         },
         watermark: {
           visible: true,
@@ -261,8 +265,8 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
             color: "#A855F7",
             lineWidth: 1,
             lineStyle: lwc.LineStyle.Dotted,
-            axisLabelVisible: true,
-            title: `⚓ PAVP ANCHOR (${pavp.pivot.type.toUpperCase()} ${pavp.pivot.price})`,
+            axisLabelVisible: false,
+            title: `⚓ ANCHOR (${pavp.pivot.type.toUpperCase()})`,
           });
         }
       }
@@ -299,7 +303,7 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
           color: "rgba(255, 59, 48, 0.7)",
           lineWidth: 1,
           lineStyle: lwc.LineStyle.Dotted,
-          axisLabelVisible: true,
+          axisLabelVisible: false,
           title: `R1 ${technicals.pivots.r1}`,
         });
         candleSeries.createPriceLine({
@@ -307,7 +311,7 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
           color: "rgba(0, 230, 118, 0.7)",
           lineWidth: 1,
           lineStyle: lwc.LineStyle.Dotted,
-          axisLabelVisible: true,
+          axisLabelVisible: false,
           title: `S1 ${technicals.pivots.s1}`,
         });
       }
@@ -320,7 +324,7 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
           color: "#FFD700",
           lineWidth: 1.5,
           lineStyle: lwc.LineStyle.Dashed,
-          axisLabelVisible: true,
+          axisLabelVisible: false,
           title: `GOLDEN 0.618 (${fib.fib618})`,
         });
       }
@@ -332,7 +336,7 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
           color: "#38BDF8",
           lineWidth: 1,
           lineStyle: lwc.LineStyle.LargeDashed,
-          axisLabelVisible: true,
+          axisLabelVisible: false,
           title: `50% EQ (${smc.equilibriumPrice})`,
         });
       }
@@ -346,7 +350,7 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
           color: isBull ? "#00E676" : "#FF3B30",
           lineWidth: 1.5,
           lineStyle: lwc.LineStyle.Solid,
-          axisLabelVisible: true,
+          axisLabelVisible: false,
           title: `${isBull ? "BULL" : "BEAR"} OB (${activeOB.low})`,
         });
       }
@@ -359,7 +363,7 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
           color: "#A855F7",
           lineWidth: 1.5,
           lineStyle: lwc.LineStyle.Dashed,
-          axisLabelVisible: true,
+          axisLabelVisible: false,
           title: `FVG GAP (${activeFVG.bottom}-${activeFVG.top})`,
         });
       }
@@ -371,7 +375,7 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
           color: "#F59E0B",
           lineWidth: 1.5,
           lineStyle: lwc.LineStyle.Dashed,
-          axisLabelVisible: true,
+          axisLabelVisible: false,
           title: `PDH ${sessionLevels.pdh}`,
         });
         candleSeries.createPriceLine({
@@ -379,7 +383,7 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
           color: "#A855F7",
           lineWidth: 1.5,
           lineStyle: lwc.LineStyle.Dashed,
-          axisLabelVisible: true,
+          axisLabelVisible: false,
           title: `PDL ${sessionLevels.pdl}`,
         });
       }
@@ -391,7 +395,7 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
           color: "#06B6D4",
           lineWidth: 1.5,
           lineStyle: lwc.LineStyle.Dotted,
-          axisLabelVisible: true,
+          axisLabelVisible: false,
           title: `ORB-H ${sessionLevels.orbHigh}`,
         });
         candleSeries.createPriceLine({
@@ -399,7 +403,7 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
           color: "#FB923C",
           lineWidth: 1.5,
           lineStyle: lwc.LineStyle.Dotted,
-          axisLabelVisible: true,
+          axisLabelVisible: false,
           title: `ORB-L ${sessionLevels.orbLow}`,
         });
         candleSeries.createPriceLine({
@@ -407,7 +411,7 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
           color: "rgba(255, 255, 255, 0.4)",
           lineWidth: 1,
           lineStyle: lwc.LineStyle.Dotted,
-          axisLabelVisible: true,
+          axisLabelVisible: false,
           title: `ORB 50%`,
         });
       }
@@ -419,7 +423,7 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
           color: "#818CF8",
           lineWidth: 1,
           lineStyle: lwc.LineStyle.Dashed,
-          axisLabelVisible: true,
+          axisLabelVisible: false,
           title: `ASIA-H ${sessionLevels.asiaHigh}`,
         });
         candleSeries.createPriceLine({
@@ -427,7 +431,7 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
           color: "#2DD4BF",
           lineWidth: 1,
           lineStyle: lwc.LineStyle.Dashed,
-          axisLabelVisible: true,
+          axisLabelVisible: false,
           title: `ASIA-L ${sessionLevels.asiaLow}`,
         });
       }
@@ -439,7 +443,7 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
           color: "#FACC15",
           lineWidth: 1.5,
           lineStyle: lwc.LineStyle.LargeDashed,
-          axisLabelVisible: true,
+          axisLabelVisible: false,
           title: `DAILY OPEN ${sessionLevels.dailyOpen}`,
         });
       }

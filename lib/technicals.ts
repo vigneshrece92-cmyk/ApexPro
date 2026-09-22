@@ -1126,169 +1126,207 @@ export function detectPAVPSignals(
   const markers: ChartSignalMarker[] = [];
   const signals: PAVPSignal[] = [];
 
-  // Buffer for level interaction
-  const buffer = Math.max(0.15, vaRange * 0.05);
+  // Adaptive buffer for level interaction (proportional to Value Area range)
+  const buffer = Math.max(0.2, vaRange * 0.04);
 
   let lastAction: "BUY CE" | "BUY PE" | null = null;
   let lastSignalIdx = -20;
   let lastLevel: "VAL" | "VAH" | "POC" | null = null;
 
-  // Scan candles starting from anchor or last 40 bars
-  const startIdx = Math.max(profile.startIndex, candles.length - 40);
+  // Scan candles starting from anchor or last 50 bars
+  const startIdx = Math.max(profile.startIndex, candles.length - 50);
 
   for (let i = startIdx; i < candles.length; i++) {
-    if (i - lastSignalIdx < 14) continue; // prevent cluttered signals
-
     const c = candles[i];
     const prevC = candles[i - 1];
     if (!prevC) continue;
 
-    // 1. BUY CE @ VAL: Price sweeps/tests VAL and rejects with bullish candle
-    const testedVAL = c.low <= val + buffer && Math.abs(c.low - val) < buffer * 2.5;
-    const bullishRejection = c.close > c.open || (c.close - c.low) > (c.high - c.close) * 1.5;
-    const closedAboveVAL = c.close >= val - buffer * 0.4;
-    const isVALCall = testedVAL && closedAboveVAL && bullishRejection;
+    const barsSinceLastSignal = i - lastSignalIdx;
 
-    // 2. BUY PE @ VAH: Price sweeps/tests VAH and rejects with bearish candle
-    const testedVAH = c.high >= vah - buffer && Math.abs(c.high - vah) < buffer * 2.5;
-    const bearishRejection = c.close < c.open || (c.high - c.close) > (c.close - c.low) * 1.5;
+    // 1. BUY PE @ VAH: Price reaches/sweeps VAH and displays bearish rejection
+    // Can be single candle or 2-candle confirmation (prev bar probed VAH, current bar confirms red)
+    const testedVAH = c.high >= vah - buffer || prevC.high >= vah - buffer;
     const closedBelowVAH = c.close <= vah + buffer * 0.4;
-    const isVAHPut = testedVAH && closedBelowVAH && bearishRejection;
+    const isBearishCandle = c.close < c.open || c.close < prevC.close;
+    const upperWickRejection = (c.high - Math.max(c.open, c.close)) >= (Math.abs(c.close - c.open) * 0.4);
+    const isVAHPut = testedVAH && closedBelowVAH && (isBearishCandle || upperWickRejection);
 
-    // 3. BUY CE @ POC: Bullish retest of Point of Control
-    const isPOCBounce = prevC.close >= poc && c.low <= poc + buffer * 0.6 && c.close > poc && c.close > c.open;
-    const isPOCCall = isPOCBounce && lastLevel !== "POC" && Math.abs(c.close - val) > buffer * 1.8;
+    // 2. BUY CE @ VAL: Price reaches/sweeps VAL and displays bullish rejection
+    const testedVAL = c.low <= val + buffer || prevC.low <= val + buffer;
+    const closedAboveVAL = c.close >= val - buffer * 0.4;
+    const isBullishCandle = c.close > c.open || c.close > prevC.close;
+    const lowerWickRejection = (Math.min(c.open, c.close) - c.low) >= (Math.abs(c.close - c.open) * 0.4);
+    const isVALCall = testedVAL && closedAboveVAL && (isBullishCandle || lowerWickRejection);
 
-    // 4. BUY PE @ POC: Bearish rejection at Point of Control
-    const isPOCReject = prevC.close <= poc && c.high >= poc - buffer * 0.6 && c.close < poc && c.close < c.open;
-    const isPOCPut = isPOCReject && lastLevel !== "POC" && Math.abs(c.close - vah) > buffer * 1.8;
+    // 3. BUY CE @ POC: Bullish retest of Point of Control (only when ample upside room to VAH exists)
+    const distToVAH = vah - c.close;
+    const hasRoomToVAH = distToVAH >= vaRange * 0.35;
+    const testedPOCBounce =
+      (c.low <= poc + buffer * 0.6 && c.low >= poc - buffer * 1.2) ||
+      (prevC.low <= poc + buffer * 0.6 && prevC.close >= poc);
+    const isPOCCall = testedPOCBounce && c.close > poc && c.close > c.open && hasRoomToVAH && !isVAHPut;
 
-    if (isVALCall && lastAction !== "BUY CE") {
-      const sl = +(val - buffer * 1.5).toFixed(precision);
-      const tp1 = +poc.toFixed(precision);
-      const tp2 = +vah.toFixed(precision);
+    // 4. BUY PE @ POC: Bearish rejection at Point of Control (only when ample downside room to VAL exists)
+    const distToVAL = c.close - val;
+    const hasRoomToVAL = distToVAL >= vaRange * 0.35;
+    const testedPOCReject =
+      (c.high >= poc - buffer * 0.6 && c.high <= poc + buffer * 1.2) ||
+      (prevC.high >= poc - buffer * 0.6 && prevC.close <= poc);
+    const isPOCPut = testedPOCReject && c.close < poc && c.close < c.open && hasRoomToVAL && !isVALCall;
 
-      signals.push({
-        type: "BUY_CE_VAL",
-        label: `BUY CE @ VAL ${c.close.toFixed(precision)}`,
-        action: "BUY CE",
-        levelPrice: val,
-        candleIndex: i,
-        time: c.time,
-        sl,
-        tp1,
-        tp2,
-        rationale: `Bullish rejection off Value Area Low (VAL: ${val.toFixed(precision)}). Target POC magnet (${poc.toFixed(precision)}) and VAH (${vah.toFixed(precision)}).`,
-      });
+    // Cooldown logic:
+    // When reversing direction (CALL -> PUT or PUT -> CALL), allow rapid execution (>= 2 bars)
+    // When same direction and same level, enforce 8 bars debounce to avoid repetitive duplicate markers
+    if (isVAHPut) {
+      const isReversal = lastAction === "BUY CE";
+      const minSpacing = isReversal ? 2 : 8;
+      if (barsSinceLastSignal >= minSpacing && (lastAction !== "BUY PE" || lastLevel !== "VAH")) {
+        const sl = +(Math.max(c.high, prevC.high) + buffer * 1.2).toFixed(precision);
+        const tp1 = +poc.toFixed(precision);
+        const tp2 = +val.toFixed(precision);
 
-      markers.push({
-        time: c.time,
-        position: "belowBar",
-        color: "#00E676", // vibrant fluorescent green
-        shape: "arrowUp",
-        text: `BUY CE @ VAL ${c.close.toFixed(precision)}`,
-        size: 1.4,
-      });
+        signals.push({
+          type: "BUY_PE_VAH",
+          label: `SELL PE @ VAH ${c.close.toFixed(precision)}`,
+          action: "BUY PE",
+          levelPrice: vah,
+          candleIndex: i,
+          time: c.time,
+          sl,
+          tp1,
+          tp2,
+          rationale: `Bearish rejection off Value Area High (VAH: ${vah.toFixed(precision)}). Expected 80% Rule rotation toward POC (${poc.toFixed(precision)}) and VAL (${val.toFixed(precision)}).`,
+        });
 
-      lastAction = "BUY CE";
-      lastLevel = "VAL";
-      lastSignalIdx = i;
-    } else if (isVAHPut && lastAction !== "BUY PE") {
-      const sl = +(vah + buffer * 1.5).toFixed(precision);
-      const tp1 = +poc.toFixed(precision);
-      const tp2 = +val.toFixed(precision);
+        markers.push({
+          time: c.time,
+          position: "aboveBar",
+          color: "#EF4444", // TradingView red
+          shape: "arrowDown",
+          text: "SELL PE @ VAH",
+          size: 1.3,
+        });
 
-      signals.push({
-        type: "BUY_PE_VAH",
-        label: `BUY PE @ VAH ${c.close.toFixed(precision)}`,
-        action: "BUY PE",
-        levelPrice: vah,
-        candleIndex: i,
-        time: c.time,
-        sl,
-        tp1,
-        tp2,
-        rationale: `Bearish rejection off Value Area High (VAH: ${vah.toFixed(precision)}). Target POC magnet (${poc.toFixed(precision)}) and VAL (${val.toFixed(precision)}).`,
-      });
+        lastAction = "BUY PE";
+        lastLevel = "VAH";
+        lastSignalIdx = i;
+        continue;
+      }
+    }
 
-      markers.push({
-        time: c.time,
-        position: "aboveBar",
-        color: "#FF1744", // vibrant red
-        shape: "arrowDown",
-        text: `BUY PE @ VAH ${c.close.toFixed(precision)}`,
-        size: 1.4,
-      });
+    if (isVALCall) {
+      const isReversal = lastAction === "BUY PE";
+      const minSpacing = isReversal ? 2 : 8;
+      if (barsSinceLastSignal >= minSpacing && (lastAction !== "BUY CE" || lastLevel !== "VAL")) {
+        const sl = +(Math.min(c.low, prevC.low) - buffer * 1.2).toFixed(precision);
+        const tp1 = +poc.toFixed(precision);
+        const tp2 = +vah.toFixed(precision);
 
-      lastAction = "BUY PE";
-      lastLevel = "VAH";
-      lastSignalIdx = i;
-    } else if (isPOCCall && lastAction !== "BUY CE") {
-      const sl = +(poc - buffer * 1.2).toFixed(precision);
-      const tp1 = +vah.toFixed(precision);
-      const tp2 = +(vah + buffer * 2.0).toFixed(precision);
+        signals.push({
+          type: "BUY_CE_VAL",
+          label: `BUY CE @ VAL ${c.close.toFixed(precision)}`,
+          action: "BUY CE",
+          levelPrice: val,
+          candleIndex: i,
+          time: c.time,
+          sl,
+          tp1,
+          tp2,
+          rationale: `Bullish bounce off Value Area Low (VAL: ${val.toFixed(precision)}). Expected rotation toward POC (${poc.toFixed(precision)}) and VAH (${vah.toFixed(precision)}).`,
+        });
 
-      signals.push({
-        type: "BUY_CE_POC",
-        label: `BUY CE @ POC ${c.close.toFixed(precision)}`,
-        action: "BUY CE",
-        levelPrice: poc,
-        candleIndex: i,
-        time: c.time,
-        sl,
-        tp1,
-        tp2,
-        rationale: `Point of Control (POC: ${poc.toFixed(precision)}) retest support confirmed. Target VAH (${vah.toFixed(precision)}).`,
-      });
+        markers.push({
+          time: c.time,
+          position: "belowBar",
+          color: "#10B981", // TradingView emerald green
+          shape: "arrowUp",
+          text: "BUY CE @ VAL",
+          size: 1.3,
+        });
 
-      markers.push({
-        time: c.time,
-        position: "belowBar",
-        color: "#00E5FF", // vibrant cyan
-        shape: "arrowUp",
-        text: `BUY CE @ POC ${c.close.toFixed(precision)}`,
-        size: 1.2,
-      });
+        lastAction = "BUY CE";
+        lastLevel = "VAL";
+        lastSignalIdx = i;
+        continue;
+      }
+    }
 
-      lastAction = "BUY CE";
-      lastLevel = "POC";
-      lastSignalIdx = i;
-    } else if (isPOCPut && lastAction !== "BUY PE") {
-      const sl = +(poc + buffer * 1.2).toFixed(precision);
-      const tp1 = +val.toFixed(precision);
-      const tp2 = +(val - buffer * 2.0).toFixed(precision);
+    if (isPOCCall && lastAction !== "BUY CE") {
+      const minSpacing = 6;
+      if (barsSinceLastSignal >= minSpacing) {
+        const sl = +(poc - buffer * 1.2).toFixed(precision);
+        const tp1 = +vah.toFixed(precision);
+        const tp2 = +(vah + buffer * 2.0).toFixed(precision);
 
-      signals.push({
-        type: "BUY_PE_POC",
-        label: `BUY PE @ POC ${c.close.toFixed(precision)}`,
-        action: "BUY PE",
-        levelPrice: poc,
-        candleIndex: i,
-        time: c.time,
-        sl,
-        tp1,
-        tp2,
-        rationale: `Point of Control (POC: ${poc.toFixed(precision)}) resistance confirmed. Target VAL (${val.toFixed(precision)}).`,
-      });
+        signals.push({
+          type: "BUY_CE_POC",
+          label: `BUY CE @ POC ${c.close.toFixed(precision)}`,
+          action: "BUY CE",
+          levelPrice: poc,
+          candleIndex: i,
+          time: c.time,
+          sl,
+          tp1,
+          tp2,
+          rationale: `Point of Control (POC: ${poc.toFixed(precision)}) retest support confirmed. Target VAH (${vah.toFixed(precision)}).`,
+        });
 
-      markers.push({
-        time: c.time,
-        position: "aboveBar",
-        color: "#FF9100", // vibrant orange
-        shape: "arrowDown",
-        text: `BUY PE @ POC ${c.close.toFixed(precision)}`,
-        size: 1.2,
-      });
+        markers.push({
+          time: c.time,
+          position: "belowBar",
+          color: "#06B6D4", // Cyan
+          shape: "arrowUp",
+          text: "BUY CE @ POC",
+          size: 1.1,
+        });
 
-      lastAction = "BUY PE";
-      lastLevel = "POC";
-      lastSignalIdx = i;
+        lastAction = "BUY CE";
+        lastLevel = "POC";
+        lastSignalIdx = i;
+        continue;
+      }
+    }
+
+    if (isPOCPut && lastAction !== "BUY PE") {
+      const minSpacing = 6;
+      if (barsSinceLastSignal >= minSpacing) {
+        const sl = +(poc + buffer * 1.2).toFixed(precision);
+        const tp1 = +val.toFixed(precision);
+        const tp2 = +(val - buffer * 2.0).toFixed(precision);
+
+        signals.push({
+          type: "BUY_PE_POC",
+          label: `SELL PE @ POC ${c.close.toFixed(precision)}`,
+          action: "BUY PE",
+          levelPrice: poc,
+          candleIndex: i,
+          time: c.time,
+          sl,
+          tp1,
+          tp2,
+          rationale: `Point of Control (POC: ${poc.toFixed(precision)}) resistance confirmed. Target VAL (${val.toFixed(precision)}).`,
+        });
+
+        markers.push({
+          time: c.time,
+          position: "aboveBar",
+          color: "#F97316", // Orange
+          shape: "arrowDown",
+          text: "SELL PE @ POC",
+          size: 1.1,
+        });
+
+        lastAction = "BUY PE";
+        lastLevel = "POC";
+        lastSignalIdx = i;
+        continue;
+      }
     }
   }
 
-  // Strictly return the 2-3 most recent signals to keep charts pristine and professional
+  // Strictly return the 3-4 most recent signals to keep charts pristine and professional
   return {
-    markers: markers.slice(-3),
-    signals: signals.slice(-3),
+    markers: markers.slice(-4),
+    signals: signals.slice(-4),
   };
 }

@@ -53,20 +53,23 @@ export const InternalDemoTradingPanel: React.FC<InternalDemoTradingPanelProps> =
   const [activeTab, setActiveTab] = useState<"positions" | "history">("positions");
   const [action, setAction] = useState<"BUY" | "SELL">("BUY");
   const [lotSize, setLotSize] = useState<number>(1);
-  const [stopLoss, setStopLoss] = useState<number>(23285.0);
-  const [takeProfit, setTakeProfit] = useState<number>(23360.0);
-  const [statusMessage, setStatusMessage] = useState<{
-    type: "success" | "error" | null;
-    text: string;
-  }>({ type: null, text: "" });
-  const [isTestingTg, setIsTestingTg] = useState(false);
-
   const round2 = (n: number) => Math.round(n * 100) / 100;
   const fmt2 = (v?: number, fallback = "0.00") => (typeof v === "number" && !isNaN(v) ? v.toFixed(2) : fallback);
 
   const activeSymbol = liveQuote?.symbol || "NIFTY";
   const optSpec = getOptionSpec(activeSymbol);
   const multiplier = optSpec.lotSize || 25;
+
+  const currentPriceForSym = liveQuote?.bid || (activeSymbol === "NATURALGAS" ? 271.5 : activeSymbol === "CRUDEOIL" ? 8840.0 : 23320.0);
+  const defaultDist = activeSymbol === "NATURALGAS" ? 2.5 : activeSymbol === "CRUDEOIL" ? 25.0 : activeSymbol === "BANKNIFTY" ? 70.0 : 35.0;
+
+  const [stopLoss, setStopLoss] = useState<number>(() => round2(currentPriceForSym - defaultDist));
+  const [takeProfit, setTakeProfit] = useState<number>(() => round2(currentPriceForSym + defaultDist * 2));
+  const [statusMessage, setStatusMessage] = useState<{
+    type: "success" | "error" | null;
+    text: string;
+  }>({ type: null, text: "" });
+  const [isTestingTg, setIsTestingTg] = useState(false);
 
   // Sync prefill setup when an alert is clicked or symbol changes
   useEffect(() => {
@@ -75,12 +78,13 @@ export const InternalDemoTradingPanel: React.FC<InternalDemoTradingPanelProps> =
       if (prefillSetup.stopLoss) setStopLoss(round2(prefillSetup.stopLoss));
       if (prefillSetup.takeProfit1) setTakeProfit(round2(prefillSetup.takeProfit1));
     } else if (liveQuote) {
-      const ask = liveQuote.ask || 23321.50;
-      const bid = liveQuote.bid || 23320.00;
-      const isCrude = liveQuote.symbol === "CRUDEOIL";
+      const ask = liveQuote.ask || liveQuote.bid;
+      const bid = liveQuote.bid || liveQuote.ask;
       const isGas = liveQuote.symbol === "NATURALGAS";
-      const slDist = isGas ? 2.5 : isCrude ? 25.0 : 35.0;
-      const tpDist = isGas ? 5.0 : isCrude ? 50.0 : 70.0;
+      const isCrude = liveQuote.symbol === "CRUDEOIL";
+      const isBank = liveQuote.symbol === "BANKNIFTY";
+      const slDist = isGas ? 2.5 : isCrude ? 25.0 : isBank ? 70.0 : 35.0;
+      const tpDist = isGas ? 5.0 : isCrude ? 50.0 : isBank ? 140.0 : 70.0;
       if (action === "BUY") {
         setStopLoss(round2(ask - slDist));
         setTakeProfit(round2(ask + tpDist));
@@ -93,7 +97,7 @@ export const InternalDemoTradingPanel: React.FC<InternalDemoTradingPanelProps> =
 
   if (!isOpen) return null;
 
-  const currentOpenPrice = action === "BUY" ? (liveQuote?.ask || liveQuote?.bid || 23320.00) : (liveQuote?.bid || liveQuote?.ask || 23320.00);
+  const currentOpenPrice = action === "BUY" ? (liveQuote?.ask || liveQuote?.bid || currentPriceForSym) : (liveQuote?.bid || liveQuote?.ask || currentPriceForSym);
   const slDistance = Math.abs(currentOpenPrice - stopLoss);
   const tpDistance = Math.abs(takeProfit - currentOpenPrice);
   const potentialLoss = round2(lotSize * multiplier * slDistance);
@@ -426,10 +430,10 @@ export const InternalDemoTradingPanel: React.FC<InternalDemoTradingPanelProps> =
                 <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
               </div>
               <div className="text-sm font-mono font-bold text-white mt-1">
-                Bid: ₹{fmt2(liveQuote?.bid, "23320.00")}
+                Bid: ₹{fmt2(liveQuote?.bid, currentPriceForSym.toFixed(2))}
               </div>
               <div className="text-xs font-mono text-terminal-muted">
-                Ask: ₹{fmt2(liveQuote?.ask, "23321.50")} • Spr: {liveQuote?.spread ?? 1.5} pts
+                Ask: ₹{fmt2(liveQuote?.ask, (currentPriceForSym + (activeSymbol === "NATURALGAS" ? 0.2 : 1.5)).toFixed(2))} • Spr: {liveQuote?.spread ?? (activeSymbol === "NATURALGAS" ? 0.2 : 1.5)} pts
               </div>
             </div>
           </div>

@@ -150,6 +150,15 @@ export const INITIAL_ACCOUNT_STATE: DemoAccountState = {
 /**
  * Load demo account state from browser localStorage or default
  */
+function getDefaultPrice(sym?: string): number {
+  if (sym === "NATURALGAS") return 271.50;
+  if (sym === "CRUDEOIL") return 8840.00;
+  if (sym === "BANKNIFTY") return 50150.00;
+  if (sym === "SENSEX") return 76850.00;
+  if (sym === "FINNIFTY") return 23450.00;
+  return 23320.00;
+}
+
 export function loadDemoAccount(): DemoAccountState {
   if (typeof window === "undefined") return INITIAL_ACCOUNT_STATE;
   try {
@@ -166,44 +175,55 @@ export function loadDemoAccount(): DemoAccountState {
     const safeOpenPositions: DemoPosition[] = Array.isArray(parsed.open_positions)
       ? parsed.open_positions
           .filter((p: any) => p && typeof p === "object")
-          .map((p: any) => ({
-            ticket: typeof p.ticket === "number" ? p.ticket : Math.floor(1000000 + Math.random() * 9000000),
-            symbol: (p.symbol as AssetSymbol) || "NIFTY",
-            type: p.type === "SELL" ? "SELL" : "BUY",
-            volume: typeof p.volume === "number" && !isNaN(p.volume) ? p.volume : 1.0,
-            price_open: typeof p.price_open === "number" && !isNaN(p.price_open) ? p.price_open : 23320.00,
-            sl: typeof p.sl === "number" && !isNaN(p.sl) ? p.sl : 23285.0,
-            tp: typeof p.tp === "number" && !isNaN(p.tp) ? p.tp : 23360.0,
-            price_current: typeof p.price_current === "number" && !isNaN(p.price_current) ? p.price_current : (p.price_open || 23320.00),
-            profit: typeof p.profit === "number" && !isNaN(p.profit) ? p.profit : 0,
-            comment: typeof p.comment === "string" ? p.comment : "PAVP Volume Profile",
-            time: typeof p.time === "number" ? p.time : Date.now(),
-            be_triggered: !!p.be_triggered,
-            optionContractName: p.optionContractName || "NIFTY 23300 CE",
-            currency: p.currency || "₹",
-          }))
+          .map((p: any) => {
+            const sym = (p.symbol as AssetSymbol) || "NIFTY";
+            const defPrice = getDefaultPrice(sym);
+            const pOpen = typeof p.price_open === "number" && !isNaN(p.price_open) ? p.price_open : defPrice;
+            return {
+              ticket: typeof p.ticket === "number" ? p.ticket : Math.floor(1000000 + Math.random() * 9000000),
+              symbol: sym,
+              type: p.type === "SELL" ? "SELL" : "BUY",
+              volume: typeof p.volume === "number" && !isNaN(p.volume) ? p.volume : 1.0,
+              price_open: pOpen,
+              sl: typeof p.sl === "number" && !isNaN(p.sl) ? p.sl : +(pOpen * 0.995).toFixed(2),
+              tp: typeof p.tp === "number" && !isNaN(p.tp) ? p.tp : +(pOpen * 1.01).toFixed(2),
+              price_current: typeof p.price_current === "number" && !isNaN(p.price_current) ? p.price_current : pOpen,
+              profit: typeof p.profit === "number" && !isNaN(p.profit) ? p.profit : 0,
+              comment: typeof p.comment === "string" ? p.comment : "PAVP Volume Profile",
+              time: typeof p.time === "number" ? p.time : Date.now(),
+              be_triggered: !!p.be_triggered,
+              optionContractName: p.optionContractName || `${sym} Option`,
+              currency: p.currency || "₹",
+            };
+          })
       : [];
 
     const safeHistory: ClosedTrade[] = Array.isArray(parsed.history)
       ? parsed.history
           .filter((h: any) => h && typeof h === "object")
-          .map((h: any) => ({
-            ticket: typeof h.ticket === "number" ? h.ticket : Math.floor(1000000 + Math.random() * 9000000),
-            symbol: (h.symbol as AssetSymbol) || "NIFTY",
-            type: h.type === "SELL" ? "SELL" : "BUY",
-            volume: typeof h.volume === "number" && !isNaN(h.volume) ? h.volume : 1.0,
-            price_open: typeof h.price_open === "number" && !isNaN(h.price_open) ? h.price_open : 23320.00,
-            price_close: typeof h.price_close === "number" && !isNaN(h.price_close) ? h.price_close : 23360.00,
-            sl: typeof h.sl === "number" && !isNaN(h.sl) ? h.sl : 23285.0,
-            tp: typeof h.tp === "number" && !isNaN(h.tp) ? h.tp : 23360.0,
-            profit: typeof h.profit === "number" && !isNaN(h.profit) ? h.profit : 1000,
-            return_percent: typeof h.return_percent === "number" && !isNaN(h.return_percent) ? h.return_percent : 1.0,
-            open_time: typeof h.open_time === "number" ? h.open_time : Date.now() - 60000,
-            close_time: typeof h.close_time === "number" ? h.close_time : Date.now(),
-            close_reason: typeof h.close_reason === "string" ? h.close_reason : "Take Profit Hit",
-            optionContractName: h.optionContractName || "NIFTY 23300 CE",
-            currency: h.currency || "₹",
-          }))
+          .map((h: any) => {
+            const sym = (h.symbol as AssetSymbol) || "NIFTY";
+            const defPrice = getDefaultPrice(sym);
+            const pOpen = typeof h.price_open === "number" && !isNaN(h.price_open) ? h.price_open : defPrice;
+            const pClose = typeof h.price_close === "number" && !isNaN(h.price_close) ? h.price_close : +(defPrice * 1.005).toFixed(2);
+            return {
+              ticket: typeof h.ticket === "number" ? h.ticket : Math.floor(1000000 + Math.random() * 9000000),
+              symbol: sym,
+              type: h.type === "SELL" ? "SELL" : "BUY",
+              volume: typeof h.volume === "number" && !isNaN(h.volume) ? h.volume : 1.0,
+              price_open: pOpen,
+              price_close: pClose,
+              sl: typeof h.sl === "number" && !isNaN(h.sl) ? h.sl : +(pOpen * 0.995).toFixed(2),
+              tp: typeof h.tp === "number" && !isNaN(h.tp) ? h.tp : +(pOpen * 1.01).toFixed(2),
+              profit: typeof h.profit === "number" && !isNaN(h.profit) ? h.profit : 1000,
+              return_percent: typeof h.return_percent === "number" && !isNaN(h.return_percent) ? h.return_percent : 1.0,
+              open_time: typeof h.open_time === "number" ? h.open_time : Date.now() - 60000,
+              close_time: typeof h.close_time === "number" ? h.close_time : Date.now(),
+              close_reason: typeof h.close_reason === "string" ? h.close_reason : "Take Profit Hit",
+              optionContractName: h.optionContractName || `${sym} Option`,
+              currency: h.currency || "₹",
+            };
+          })
       : [];
 
     return {

@@ -137,7 +137,7 @@ RESPOND STRICTLY IN VALID JSON matching this exact schema:
       };
       const ySym = yMap[activeSymbol];
       if (ySym) {
-        const mult = activeSymbol === "CRUDEOIL" || activeSymbol === "NATURALGAS" ? 83.8 : 1.0;
+        const mult = activeSymbol === "CRUDEOIL" ? 96.85 : activeSymbol === "NATURALGAS" ? 87.20 : 1.0;
         const yRes = await fetch(
           `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ySym)}?interval=5m&range=5d`,
           {
