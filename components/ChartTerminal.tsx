@@ -86,8 +86,8 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
   }, [technicals.volumeProfile, candles, quote.pipPrecision]);
 
   const chartSignals = React.useMemo(() => {
-    return detectChartSignals(candles, quote.pipPrecision);
-  }, [candles, quote.pipPrecision]);
+    return detectChartSignals(candles, volumeProfile, quote.pipPrecision);
+  }, [candles, volumeProfile, quote.pipPrecision]);
 
   // Mount TradingView Lightweight Charts if in "smart" mode
   useEffect(() => {

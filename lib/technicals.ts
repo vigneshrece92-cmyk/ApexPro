@@ -673,66 +673,118 @@ export function calculateVolumeProfile(
 }
 
 /**
- * In-Chart Institutional BUY / SELL Signal Generator
- * Generates directional marker arrows pinned directly to candles on liquidity sweeps and momentum shifts.
+ * Volume Profile (VP) Institutional BUY / SELL Signal Generator
+ * Strictly generates signals based ONLY on Volume Profile Key Levels:
+ * 1. BUY @ VAL: Price tests/sweeps Value Area Low (VAL) and rejects upwards (Discount Buy).
+ * 2. SELL @ VAH: Price tests/sweeps Value Area High (VAH) and rejects downwards (Premium Sell).
+ * 3. BUY @ POC: Price retests Point of Control (POC) as support after expansion.
+ * 4. SELL @ POC: Price retests Point of Control (POC) as resistance after breakdown.
  */
-export function detectChartSignals(candles: Candle[], precision = 2): ChartSignalMarker[] {
+export function detectChartSignals(
+  candles: Candle[],
+  vp?: VolumeProfileResult,
+  precision = 2
+): ChartSignalMarker[] {
   if (!candles || candles.length < 15) return [];
+
+  // If Volume Profile is not passed, compute it dynamically
+  const profile = vp || calculateVolumeProfile(candles, 32, 0.70, precision);
+  if (!profile || profile.poc <= 0) return [];
+
+  const { val, vah, poc } = profile;
+  const vaRange = Math.abs(vah - val);
+  if (vaRange <= 0) return [];
+
   const markers: ChartSignalMarker[] = [];
-  const closes = candles.map((c) => c.close);
-  const ema20 = calculateEMA(closes, 20);
-  const ema50 = calculateEMA(closes, 50);
 
-  let lastSignalIdx = -10;
+  // Tolerance buffer for level interaction (~6% of Value Area range)
+  const buffer = Math.max(0.1, vaRange * 0.06);
 
-  for (let i = 12; i < candles.length; i++) {
-    // Maintain clean chart spacing: min 6 candles between signals
-    if (i - lastSignalIdx < 6) continue;
+  let lastSignalType: "BUY" | "SELL" | null = null;
+  let lastSignalIdx = -25;
+  let lastLevelType: "VAL" | "VAH" | "POC" | null = null;
+
+  // Scan recent candles
+  const startIdx = Math.max(8, candles.length - 100);
+
+  for (let i = startIdx; i < candles.length; i++) {
+    // Require at least 10 candles between signals to keep chart ultra-clean and high-probability
+    if (i - lastSignalIdx < 10) continue;
 
     const c = candles[i];
     const prevC = candles[i - 1];
 
-    const isBullSweep =
-      c.low < prevC.low &&
-      c.close > (c.open + c.low) / 2 &&
-      c.close > prevC.low &&
-      c.close > c.open;
+    // 1. Value Area Low (VAL) Rejection -> BUY
+    // Price dips into or sweeps below VAL and rejects back above with bullish confirmation
+    const touchedVAL = c.low <= val + buffer;
+    const closedAboveVAL = c.close >= val - buffer * 0.5;
+    const isBullishCandle = c.close > c.open || (c.close - c.low) > (c.high - c.close);
+    const isVALBuy = touchedVAL && closedAboveVAL && isBullishCandle;
 
-    const isEMAUpCross =
-      ema20[i] > ema50[i] &&
-      ema20[i - 1] <= ema50[i - 1] &&
-      c.close > ema20[i];
+    // 2. Value Area High (VAH) Rejection -> SELL
+    // Price pushes into or sweeps above VAH and rejects back below with bearish confirmation
+    const touchedVAH = c.high >= vah - buffer;
+    const closedBelowVAH = c.close <= vah + buffer * 0.5;
+    const isBearishCandle = c.close < c.open || (c.high - c.close) > (c.close - c.low);
+    const isVAHSell = touchedVAH && closedBelowVAH && isBearishCandle;
 
-    const isBearSweep =
-      c.high > prevC.high &&
-      c.close < (c.open + c.high) / 2 &&
-      c.close < prevC.high &&
-      c.close < c.open;
+    // 3. Point of Control (POC) Support Rebound -> BUY
+    // Price pulls back into POC from above and bounces bullishly
+    const isPOCTestFromAbove = prevC.close > poc && c.low <= poc + buffer * 0.5 && c.close >= poc;
+    const isPOCBuy = isPOCTestFromAbove && c.close > c.open && lastLevelType !== "POC" && Math.abs(c.close - val) > buffer * 1.5;
 
-    const isEMADownCross =
-      ema20[i] < ema50[i] &&
-      ema20[i - 1] >= ema50[i - 1] &&
-      c.close < ema20[i];
+    // 4. Point of Control (POC) Resistance Rejection -> SELL
+    // Price pulls back into POC from below and rejects bearishly
+    const isPOCTestFromBelow = prevC.close < poc && c.high >= poc - buffer * 0.5 && c.close <= poc;
+    const isPOCSell = isPOCTestFromBelow && c.close < c.open && lastLevelType !== "POC" && Math.abs(c.close - vah) > buffer * 1.5;
 
-    if (isBullSweep || isEMAUpCross) {
+    if (isVALBuy && lastSignalType !== "BUY") {
       markers.push({
         time: c.time as any,
         position: "belowBar",
         color: "#00E676",
         shape: "arrowUp",
-        text: `BUY ${c.close.toFixed(precision)}`,
-        size: 1.2,
+        text: `BUY @ VAL ${c.close.toFixed(precision)}`,
+        size: 1.4,
       });
+      lastSignalType = "BUY";
+      lastLevelType = "VAL";
       lastSignalIdx = i;
-    } else if (isBearSweep || isEMADownCross) {
+    } else if (isVAHSell && lastSignalType !== "SELL") {
       markers.push({
         time: c.time as any,
         position: "aboveBar",
         color: "#FF3B30",
         shape: "arrowDown",
-        text: `SELL ${c.close.toFixed(precision)}`,
+        text: `SELL @ VAH ${c.close.toFixed(precision)}`,
+        size: 1.4,
+      });
+      lastSignalType = "SELL";
+      lastLevelType = "VAH";
+      lastSignalIdx = i;
+    } else if (isPOCBuy && lastSignalType !== "BUY") {
+      markers.push({
+        time: c.time as any,
+        position: "belowBar",
+        color: "#10B981",
+        shape: "arrowUp",
+        text: `BUY @ POC ${c.close.toFixed(precision)}`,
         size: 1.2,
       });
+      lastSignalType = "BUY";
+      lastLevelType = "POC";
+      lastSignalIdx = i;
+    } else if (isPOCSell && lastSignalType !== "SELL") {
+      markers.push({
+        time: c.time as any,
+        position: "aboveBar",
+        color: "#F43F5E",
+        shape: "arrowDown",
+        text: `SELL @ POC ${c.close.toFixed(precision)}`,
+        size: 1.2,
+      });
+      lastSignalType = "SELL";
+      lastLevelType = "POC";
       lastSignalIdx = i;
     }
   }
