@@ -1,10 +1,10 @@
-﻿import { AssetSymbol, OptionContract, OptionChainItem, OptionType } from "./types";
+import { AssetSymbol, OptionContract, OptionChainItem, OptionType } from "./types";
 
 export interface SymbolOptionSpec {
   lotSize: number;
   strikeStep: number;
   defaultIV: number;
-  currency: "₹" | "$";
+  currency: "₹";
 }
 
 export const SYMBOL_OPTION_SPECS: Record<string, SymbolOptionSpec> = {
@@ -14,8 +14,6 @@ export const SYMBOL_OPTION_SPECS: Record<string, SymbolOptionSpec> = {
   SENSEX: { lotSize: 10, strikeStep: 100, defaultIV: 13.0, currency: "₹" },
   CRUDEOIL: { lotSize: 100, strikeStep: 50, defaultIV: 28.5, currency: "₹" },
   NATURALGAS: { lotSize: 1250, strikeStep: 5, defaultIV: 45.0, currency: "₹" },
-  XAUUSD: { lotSize: 100, strikeStep: 10, defaultIV: 18.0, currency: "$" },
-  EURUSD: { lotSize: 100000, strikeStep: 0.005, defaultIV: 6.5, currency: "$" },
 };
 
 export function getOptionSpec(symbol: AssetSymbol | string): SymbolOptionSpec {

@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import React from "react";
 import { AssetSymbol, MTFAssetRow, Quote } from "@/lib/types";
@@ -133,7 +133,7 @@ export const MTFHeatmap: React.FC<MTFHeatmapProps> = ({
                   {/* Asset */}
                   <td className="py-2.5 px-3">
                     <div className="flex items-center gap-2">
-                      <span className={`font-bold ${row.symbol.includes("XAU") ? "text-gold" : "text-white"}`}>
+                      <span className="font-bold text-white">
                         {row.symbol}
                       </span>
                       <span className="text-[10px] text-terminal-muted hidden sm:inline">
@@ -143,8 +143,8 @@ export const MTFHeatmap: React.FC<MTFHeatmapProps> = ({
                   </td>
 
                   {/* Price */}
-                  <td className="py-2.5 px-2 font-bold text-white">
-                    {row.price}
+                  <td className="py-2.5 px-2 font-bold text-white font-mono">
+                    ₹{typeof row.price === "number" ? row.price.toLocaleString("en-IN", { minimumFractionDigits: 1, maximumFractionDigits: 2 }) : row.price}
                   </td>
 
                   {/* 15M */}

@@ -5,15 +5,10 @@ export type AssetSymbol =
   | "NATURALGAS"
   | "FINNIFTY"
   | "SENSEX"
-  | "XAUUSD"
-  | "XAGUSD"
-  | "USDJPY"
-  | "GBPUSD"
-  | "EURUSD"
-  | "DXY"
-  | "US10Y";
+  | "INDIAVIX"
+  | "USDINR";
 
-export type MarketMode = "INDIAN_OPTIONS" | "GLOBAL_FX";
+export type MarketMode = "INDIAN_OPTIONS";
 
 export type OptionType = "CE" | "PE";
 
@@ -53,7 +48,7 @@ export interface Candle {
 export interface Quote {
   symbol: AssetSymbol;
   name: string;
-  category: "Commodity" | "Forex" | "Macro" | "Indian Index" | "MCX Commodity";
+  category: "Indian Index" | "MCX Commodity" | "Macro";
   bid: number;
   ask: number;
   spread: number;
@@ -65,7 +60,7 @@ export interface Quote {
   lastUpdate: number;
   lotSize?: number;
   strikeStep?: number;
-  currency?: "₹" | "$";
+  currency?: "₹";
 }
 
 export interface PAVPVolumeRow {
@@ -260,7 +255,7 @@ export interface CalendarEvent {
   id: string;
   time: string; // HH:mm UTC or ISO
   date: string; // YYYY-MM-DD
-  currency: "USD" | "EUR" | "GBP" | "JPY";
+  currency: "INR" | "USD" | string;
   event: string;
   impact: "high" | "medium" | "low";
   actual?: string;
@@ -280,7 +275,7 @@ export interface NewsItem {
 }
 
 export interface MarketSession {
-  name: "Sydney" | "Tokyo" | "London" | "New York";
+  name: string;
   city: string;
   openUtc: number; // Hour (0-23)
   closeUtc: number; // Hour (0-23)
@@ -321,7 +316,7 @@ export interface RetailSentimentItem {
   name: string;
   longPercent: number;
   shortPercent: number;
-  contrarianSignal: "Bullish Squeeze Alert" | "Bearish Liquidity Hunt" | "Neutral Flow";
+  contrarianSignal: string;
   cotInstitutionalBias: string;
 }
 

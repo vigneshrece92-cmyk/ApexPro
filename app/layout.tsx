@@ -2,9 +2,9 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "ApexFX Pro Terminal | AI Forex & Metals Trading Intelligence",
+  title: "Apex Pro Terminal | Indian Options & MCX Commodities Intelligence",
   description:
-    "Institutional Forex & Gold Trading Terminal featuring AI Chart Vision Analyzer, Automated Support & Resistance markup, Economic News Calendar, and Risk Calculators.",
+    "Institutional Indian Options & MCX Commodities Terminal featuring Pivot-Anchored Volume Profile (PAVP - VAH, VAL, POC), AI Chart Vision, Option Chain Radar, and Risk Sizing.",
 };
 
 export default function RootLayout({

@@ -1,8 +1,8 @@
-﻿"use client";
+"use client";
 
 import React, { useState } from "react";
 import { PROP_FIRM_PROFILES } from "@/lib/defaultData";
-import { ShieldCheck, ShieldAlert, AlertTriangle, Calculator, X, DollarSign, Lock, RefreshCw } from "lucide-react";
+import { ShieldCheck, ShieldAlert, AlertTriangle, Calculator, X, Lock } from "lucide-react";
 
 interface PropFirmGuardianModalProps {
   isOpen: boolean;
@@ -14,17 +14,17 @@ export const PropFirmGuardianModal: React.FC<PropFirmGuardianModalProps> = ({
   onClose,
 }) => {
   const [selectedFirm, setSelectedFirm] = useState(PROP_FIRM_PROFILES[0].id);
-  const [accountSize, setAccountSize] = useState<number>(100000);
-  const [startingBalance, setStartingBalance] = useState<number>(100000);
-  const [currentEquity, setCurrentEquity] = useState<number>(99200);
-  const [stopLossDistance, setStopLossDistance] = useState<number>(15); // e.g. $15 for Gold or 15 pips for FX
+  const [accountSize, setAccountSize] = useState<number>(500000); // ₹5,00,000 default Indian prop/f&o capital
+  const [startingBalance, setStartingBalance] = useState<number>(500000);
+  const [currentEquity, setCurrentEquity] = useState<number>(496000);
+  const [stopLossPoints, setStopLossPoints] = useState<number>(25); // 25 index points SL
   const [riskPerTradePercent, setRiskPerTradePercent] = useState<number>(0.5); // 0.5% risk
 
   if (!isOpen) return null;
 
   const firm = PROP_FIRM_PROFILES.find((f) => f.id === selectedFirm) || PROP_FIRM_PROFILES[0];
 
-  // Calculations
+  // Calculations in INR
   const maxDailyLossAllowed = (accountSize * firm.maxDailyLossPercent) / 100;
   const maxTotalLossAllowed = (accountSize * firm.maxTotalLossPercent) / 100;
 
@@ -38,15 +38,24 @@ export const PropFirmGuardianModal: React.FC<PropFirmGuardianModalProps> = ({
   const totalLossRemaining = Math.max(0, maxTotalLossAllowed - totalLossSoFar);
   const totalBufferPercent = (totalLossRemaining / maxTotalLossAllowed) * 100;
 
-  // Safe Dollar Risk based on chosen % (e.g. 0.5% of account)
-  const safeDollarRisk = (accountSize * riskPerTradePercent) / 100;
+  // Safe Rupee Risk based on chosen % (e.g. 0.5% of account)
+  const safeRupeeRisk = (accountSize * riskPerTradePercent) / 100;
 
-  // Max Safe Lot Size
-  // Gold: 1 lot = 100 oz -> $1 SL move = $100 loss per lot
-  const maxGoldLots = +(safeDollarRisk / (stopLossDistance * 100)).toFixed(2);
+  // Max Safe Lot Sizes:
+  // NIFTY 50: 25 qty per lot -> 1 point SL = ₹25/lot
+  const maxNiftyLots = Math.max(1, Math.floor(safeRupeeRisk / (stopLossPoints * 25)));
 
-  // FX: 1 lot = 100,000 units -> 1 pip SL move = $10 loss per lot
-  const maxFxLots = +(safeDollarRisk / (stopLossDistance * 10)).toFixed(2);
+  // BANK NIFTY: 15 qty per lot -> 1 point SL = ₹15/lot (usually 60-80 pt SL)
+  const bankNiftySl = stopLossPoints * 2.5;
+  const maxBankNiftyLots = Math.max(1, Math.floor(safeRupeeRisk / (bankNiftySl * 15)));
+
+  // MCX CRUDE OIL: 100 bbl per lot -> 1 point SL = ₹100/lot (20-30 pt SL)
+  const crudeSl = Math.max(10, stopLossPoints);
+  const maxCrudeLots = Math.max(1, Math.floor(safeRupeeRisk / (crudeSl * 100)));
+
+  // MCX NATURAL GAS: 1250 mmBtu per lot -> 1 point SL = ₹1250/lot (2-3 pt SL)
+  const natGasSl = Math.max(1.5, +(stopLossPoints * 0.1).toFixed(1));
+  const maxNatGasLots = Math.max(1, Math.floor(safeRupeeRisk / (natGasSl * 1250)));
 
   // Status Indicator
   const isDanger = dailyBufferPercent < 20 || totalBufferPercent < 20;
@@ -78,7 +87,7 @@ export const PropFirmGuardianModal: React.FC<PropFirmGuardianModalProps> = ({
             <div>
               <div className="flex items-center gap-2">
                 <h3 className="text-sm font-bold uppercase tracking-wider text-white">
-                  Prop Firm Drawdown Guardian
+                  F&O & MCX Capital Drawdown Guardian
                 </h3>
                 <span
                   className={`text-[9px] px-2 py-0.5 rounded font-bold uppercase ${
@@ -93,26 +102,26 @@ export const PropFirmGuardianModal: React.FC<PropFirmGuardianModalProps> = ({
                 </span>
               </div>
               <p className="text-[10px] text-terminal-muted">
-                Rule violation protector & maximum safe position size engine
+                Indian account capital protection & maximum safe lot sizing engine
               </p>
             </div>
           </div>
 
           <button
             onClick={onClose}
-            className="p-1 rounded-md text-terminal-muted hover:text-white hover:bg-terminal-card transition-all"
+            className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-terminal-hover transition-colors"
           >
-            <X className="w-5 h-5" />
+            <X className="w-4 h-4" />
           </button>
         </div>
 
         {/* Modal Body */}
         <div className="p-4 space-y-4 max-h-[80vh] overflow-y-auto">
-          {/* Firm & Tier Select */}
+          {/* Rules & Profile Selection */}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-[10px] uppercase text-terminal-muted mb-1">
-                Prop Firm Model
+                Risk Management Profile
               </label>
               <select
                 value={selectedFirm}
@@ -121,7 +130,7 @@ export const PropFirmGuardianModal: React.FC<PropFirmGuardianModalProps> = ({
               >
                 {PROP_FIRM_PROFILES.map((p) => (
                   <option key={p.id} value={p.id}>
-                    {p.name} (Daily {p.maxDailyLossPercent}% / Max {p.maxTotalLossPercent}%)
+                    {p.name} (Max {p.maxDailyLossPercent}% Daily)
                   </option>
                 ))}
               </select>
@@ -129,7 +138,7 @@ export const PropFirmGuardianModal: React.FC<PropFirmGuardianModalProps> = ({
 
             <div>
               <label className="block text-[10px] uppercase text-terminal-muted mb-1">
-                Account Size ($)
+                Account Capital Size
               </label>
               <select
                 value={accountSize}
@@ -141,11 +150,11 @@ export const PropFirmGuardianModal: React.FC<PropFirmGuardianModalProps> = ({
                 }}
                 className="w-full bg-[#080B11] border border-terminal-border rounded px-2.5 py-1.5 text-white font-mono focus:border-accent outline-none"
               >
-                <option value={10000}>$10,000</option>
-                <option value={25000}>$25,000</option>
-                <option value={50000}>$50,000</option>
-                <option value={100000}>$100,000</option>
-                <option value={200000}>$200,000</option>
+                <option value={100000}>₹1,00,000 (1 Lakh)</option>
+                <option value={250000}>₹2,50,000 (2.5 Lakhs)</option>
+                <option value={500000}>₹5,00,000 (5 Lakhs)</option>
+                <option value={1000000}>₹10,00,000 (10 Lakhs)</option>
+                <option value={2500000}>₹25,00,000 (25 Lakhs)</option>
               </select>
             </div>
           </div>
@@ -154,7 +163,7 @@ export const PropFirmGuardianModal: React.FC<PropFirmGuardianModalProps> = ({
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-[10px] uppercase text-terminal-muted mb-1">
-                Day Starting Balance ($)
+                Day Starting Balance (₹)
               </label>
               <input
                 type="number"
@@ -166,7 +175,7 @@ export const PropFirmGuardianModal: React.FC<PropFirmGuardianModalProps> = ({
 
             <div>
               <label className="block text-[10px] uppercase text-terminal-muted mb-1">
-                Current Live Equity ($)
+                Current Live Equity (₹)
               </label>
               <input
                 type="number"
@@ -184,7 +193,7 @@ export const PropFirmGuardianModal: React.FC<PropFirmGuardianModalProps> = ({
               <div className="flex items-center justify-between text-[11px]">
                 <span className="text-terminal-muted">Daily Loss Buffer:</span>
                 <span className={`font-bold ${isDanger ? "text-bear" : "text-bull"}`}>
-                  ${dailyLossRemaining.toFixed(2)}
+                  ₹{dailyLossRemaining.toLocaleString("en-IN", { maximumFractionDigits: 0 })}
                 </span>
               </div>
               <div className="w-full bg-black/60 h-2 rounded-full overflow-hidden border border-terminal-border/40">
@@ -196,8 +205,8 @@ export const PropFirmGuardianModal: React.FC<PropFirmGuardianModalProps> = ({
                 />
               </div>
               <div className="flex items-center justify-between text-[9px] text-terminal-muted">
-                <span>Max Allowed: ${maxDailyLossAllowed}</span>
-                <span>Used: ${dailyLossSoFar.toFixed(2)}</span>
+                <span>Max: ₹{maxDailyLossAllowed.toLocaleString("en-IN")}</span>
+                <span>Used: ₹{dailyLossSoFar.toLocaleString("en-IN")}</span>
               </div>
             </div>
 
@@ -206,7 +215,7 @@ export const PropFirmGuardianModal: React.FC<PropFirmGuardianModalProps> = ({
               <div className="flex items-center justify-between text-[11px]">
                 <span className="text-terminal-muted">Max Loss Buffer:</span>
                 <span className={`font-bold ${totalBufferPercent < 25 ? "text-bear" : "text-bull"}`}>
-                  ${totalLossRemaining.toFixed(2)}
+                  ₹{totalLossRemaining.toLocaleString("en-IN", { maximumFractionDigits: 0 })}
                 </span>
               </div>
               <div className="w-full bg-black/60 h-2 rounded-full overflow-hidden border border-terminal-border/40">
@@ -218,8 +227,8 @@ export const PropFirmGuardianModal: React.FC<PropFirmGuardianModalProps> = ({
                 />
               </div>
               <div className="flex items-center justify-between text-[9px] text-terminal-muted">
-                <span>Max Allowed: ${maxTotalLossAllowed}</span>
-                <span>Used: ${totalLossSoFar.toFixed(2)}</span>
+                <span>Max: ₹{maxTotalLossAllowed.toLocaleString("en-IN")}</span>
+                <span>Used: ₹{totalLossSoFar.toLocaleString("en-IN")}</span>
               </div>
             </div>
           </div>
@@ -237,30 +246,40 @@ export const PropFirmGuardianModal: React.FC<PropFirmGuardianModalProps> = ({
                   onChange={(e) => setRiskPerTradePercent(Number(e.target.value))}
                   className="bg-[#080B11] border border-terminal-border rounded px-1.5 py-0.5 text-white font-mono"
                 >
-                  <option value={0.25}>0.25% ($ {(accountSize * 0.0025).toFixed(0)})</option>
-                  <option value={0.5}>0.50% ($ {(accountSize * 0.005).toFixed(0)})</option>
-                  <option value={1.0}>1.00% ($ {(accountSize * 0.01).toFixed(0)})</option>
+                  <option value={0.25}>0.25% (₹{(accountSize * 0.0025).toLocaleString("en-IN")})</option>
+                  <option value={0.5}>0.50% (₹{(accountSize * 0.005).toLocaleString("en-IN")})</option>
+                  <option value={1.0}>1.00% (₹{(accountSize * 0.01).toLocaleString("en-IN")})</option>
                 </select>
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3 pt-1">
-              {/* Gold Position */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
+              {/* NIFTY 50 */}
               <div className="p-2.5 rounded bg-[#080B11] border border-terminal-border/60">
-                <span className="text-[10px] text-gold font-bold block mb-1">GOLD (XAU/USD - 100oz)</span>
-                <div className="text-lg font-bold text-white font-mono">{maxGoldLots} Lots</div>
-                <span className="text-[9px] text-terminal-muted block">
-                  Based on ${stopLossDistance} Stop Loss distance
-                </span>
+                <span className="text-[10px] text-cyan-400 font-bold block mb-1">NIFTY 50 (25 Qty)</span>
+                <div className="text-base font-bold text-white font-mono">{maxNiftyLots} Lots</div>
+                <span className="text-[9px] text-terminal-muted block">{maxNiftyLots * 25} Qty @ {stopLossPoints} pt SL</span>
               </div>
 
-              {/* FX Position */}
+              {/* BANK NIFTY */}
               <div className="p-2.5 rounded bg-[#080B11] border border-terminal-border/60">
-                <span className="text-[10px] text-cyan-300 font-bold block mb-1">FOREX (EUR, GBP, JPY)</span>
-                <div className="text-lg font-bold text-white font-mono">{maxFxLots} Lots</div>
-                <span className="text-[9px] text-terminal-muted block">
-                  Based on {stopLossDistance} Pips Stop Loss distance
-                </span>
+                <span className="text-[10px] text-blue-300 font-bold block mb-1">BANK NIFTY (15 Qty)</span>
+                <div className="text-base font-bold text-white font-mono">{maxBankNiftyLots} Lots</div>
+                <span className="text-[9px] text-terminal-muted block">{maxBankNiftyLots * 15} Qty @ {bankNiftySl} pt SL</span>
+              </div>
+
+              {/* MCX CRUDE */}
+              <div className="p-2.5 rounded bg-[#080B11] border border-terminal-border/60">
+                <span className="text-[10px] text-amber-400 font-bold block mb-1">CRUDE OIL (100 Qty)</span>
+                <div className="text-base font-bold text-white font-mono">{maxCrudeLots} Lots</div>
+                <span className="text-[9px] text-terminal-muted block">{maxCrudeLots * 100} Bbl @ {crudeSl} pt SL</span>
+              </div>
+
+              {/* MCX NAT GAS */}
+              <div className="p-2.5 rounded bg-[#080B11] border border-terminal-border/60">
+                <span className="text-[10px] text-teal-300 font-bold block mb-1">NAT GAS (1250 Qty)</span>
+                <div className="text-base font-bold text-white font-mono">{maxNatGasLots} Lots</div>
+                <span className="text-[9px] text-terminal-muted block">{maxNatGasLots * 1250} mmBtu @ {natGasSl} pt SL</span>
               </div>
             </div>
           </div>

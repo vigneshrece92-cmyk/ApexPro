@@ -1,51 +1,68 @@
-# ⚡ ApexFX Pro Terminal | AI Forex & Metals Trading Web App
+# ⚡ Apex Pro Terminal | Indian Options & MCX Commodities Trading Intelligence
 
-An institutional-grade trading dashboard and AI vision chart analyzer built with **Next.js 14, Tailwind CSS, TradingView Lightweight Charts, and Google Gemini AI**. 
+An institutional-grade trading terminal, automated Pivot-Anchored Volume Profile (PAVP) engine, and AI vision chart analyzer built with **Next.js 14, Tailwind CSS, TradingView Lightweight Charts, and Google Gemini AI**. 
 
-Tailored specifically for **XAU/USD (Gold), XAG/USD (Silver), USD/JPY, GBP/USD, and EUR/USD**.
+Tailored specifically for **NIFTY 50**, **BANK NIFTY**, **CRUDE OIL MCX**, **NATURAL GAS MCX**, **SENSEX**, and **FIN NIFTY** in **₹ INR**.
 
 ---
 
 ## 🌟 Key Features
 
-### 1. 🤖 AI Chart Vision Analyzer (Upload or Paste Any Screenshot)
-- **Multi-modal AI Vision**: Upload or press `Ctrl + V` to paste screenshots from **MT4, MT5, TradingView, or mobile trading apps**.
+### 1. 📊 Institutional Pivot-Anchored Volume Profile (PAVP)
+- **VAH (Value Area High), VAL (Value Area Low), and POC (Point of Control)** computed dynamically using zig-zag swing pivot anchors.
+- **Strictly Volume Profile Signals**: Real-time `BUY CE` / `BUY PE` execution triggers based on Value Area Low sweeps, Point of Control retests, and Value Area High mean reversions.
+- **VWCB Spikes**: Volume Weighted Colored Bars flagging institutional volume nodes where bar volume exceeds 89 SMA * 1.618.
+- **Session Liquidity Overlays**: Previous Day High/Low (PDH/PDL), Opening Range Breakout (ORB 15M), and Daily Open baselines.
+
+### 2. 🤖 AI Chart Vision Analyzer (TradingView, Zerodha Kite, Groww, Angel One)
+- **Multi-modal AI Vision**: Upload or press `Ctrl + V` to paste screenshots from **TradingView, Zerodha Kite, Groww, Angel One, Upstox, Dhan, or mobile trading apps**.
 - **Visual S/R Canvas Overlay**: Automatically draws horizontal **Support (Green dashed)**, **Resistance (Red dashed)**, **Entry (Cyan)**, **Stop Loss (Red)**, and **Take Profit (Green)** lines directly over the uploaded chart image.
 - **Institutional Trade Recommendations**:
-  - Action: `STRONG BUY`, `BUY`, `NEUTRAL`, `SELL`, `STRONG SELL`
+  - Action: `STRONG BUY (CE)`, `BUY (CE)`, `NEUTRAL`, `SELL (PE)`, `STRONG SELL (PE)`
   - Exact Suggested Entry Price
   - Stop Loss (SL) & Take Profit targets (`TP1`, `TP2`, `TP3`)
-  - Calculated Risk-to-Reward Ratio (e.g. `1:2.8`)
-  - Confluence checklist (EMA alignment, RSI divergence, Liquidity sweeps)
-  - Copy setup button for instant pasting into MetaTrader, Telegram, or Discord.
+  - Calculated Risk-to-Reward Ratio (e.g. `1:3.0`)
+  - Confluence checklist (PAVP Value Area, Option Chain PCR Skew, Volume Profile node)
 
-### 2. 📈 Interactive TradingView Live Terminal
+### 3. 💼 Internal Virtual Options Broker (₹1,00,000 Starting Capital)
+- **100% In-Browser & Vercel Ready**: No external broker login or MT5 installation required to test.
+- **True Indian Exchange Multipliers**:
+  - NIFTY 50: 25 Qty / lot
+  - BANK NIFTY: 15 Qty / lot
+  - CRUDE OIL MCX: 100 Qty / lot
+  - NATURAL GAS MCX: 1250 Qty / lot
+  - SENSEX: 10 Qty / lot
+  - FIN NIFTY: 25 Qty / lot
+- Real-time P&L tracking, 1-click breakeven stop loss adjustments, and automated trailing stops.
+
+### 4. 📈 Interactive TradingView Live Terminal
 - Smooth 60fps canvas charting using **TradingView Lightweight Charts**.
 - Multi-timeframe switcher: `1M`, `5M`, `15M`, `1H`, `4H`, `1D`.
-- Built-in technical overlays: **EMA 20, EMA 50, EMA 200**, **RSI (14)**, **MACD**, and **Floor/Camarilla Pivot Points**.
+- Built-in technical overlays: **EMA 20, EMA 50, EMA 200**, **PAVP Histogram HUD**, and **Floor/Camarilla Pivot Points**.
 - **⚡ 1-Click "Analyze Live Chart"**: Instantly runs the AI analyzer on the active terminal chart without needing to take a manual screenshot.
 
-### 3. 🌐 Macro Barometer (Dollar & Yield Radar)
-- **DXY (US Dollar Index)** live tracker — the single biggest macro catalyst for Gold and FX.
-- **US 10-Year Treasury Yield (`US10Y`)** — critical inverse driver for Gold and direct correlation for `USD/JPY`.
-- **Gold/Silver Ratio (`XAU/XAG`)** live tracker.
+### 5. 🌐 Indian Market Barometer
+- **INDIA VIX** live volatility skew tracker.
+- **USD/INR (RBI Reference Rate)** tracking foreign capital flow sentiment.
+- **MCX Crude / Gas Ratio** tracking domestic energy basket spreads.
 
-### 4. 📅 Forex Factory-Style Economic Calendar
-- Real-time countdown timer to the next upcoming high-impact release (e.g. CPI, NFP, FOMC).
-- High-impact filter badges (🔴 High, 🟡 Medium, ⚪ Low).
-- Currency filters (USD, EUR, GBP, JPY) with Actual vs. Forecast vs. Previous metrics.
+### 6. 📅 Indian & MCX Economic Calendar
+- Real-time tracking of RBI MPC rate decisions, India CPI/WPI, and US EIA Crude Oil & Natural Gas inventory releases (critical for MCX evening volatility).
 
-### 5. 📰 Live Breaking Financial News Wire
+### 7. 📰 Dalal Street & MCX Live Breaking Wire
 - Real-time financial headlines with automated Bullish / Bearish sentiment tags.
-- Filter news by active asset.
+- Filter news by active Indian asset.
 
-### 6. 🧮 Precision Gold & FX Lot Size Risk Calculator
-- Specifically handles Gold contract sizing (1 standard lot = 100 Troy Oz, $1 move = $100) vs Forex pairs (100,000 units, 1 pip = $10).
-- Calculates exact lot sizes based on Account Balance, Risk % (e.g., 1%), and Stop Loss distance.
+### 8. 🧮 Indian F&O & MCX Lot Calculator & Drawdown Guardian
+- Calculates exact lot sizes based on Account Balance in ₹ INR, Risk % (e.g. 1.5%), and Stop Loss distance.
+- Pre-configured capital tiers (₹1,00,000 to ₹25,00,000) with daily drawdown limits.
 
-### 7. 🕒 Global Market Sessions Clock
-- 24-hour visual clock for Sydney, Tokyo, London, and New York.
-- Automatically highlights the high-volatility **London / New York overlap window (13:00 - 17:00 UTC)**.
+### 9. 🕒 NSE & MCX Market Timings Clock
+- Visual clock tracking:
+  - **NSE/BSE Pre-Open**: 09:00 AM – 09:15 AM IST
+  - **NSE/BSE Regular F&O**: 09:15 AM – 03:30 PM IST
+  - **MCX Day Session**: 09:00 AM – 05:00 PM IST
+  - **MCX Evening Session (Peak US Overlap)**: 05:00 PM – 11:30 PM IST
 
 ---
 

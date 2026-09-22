@@ -51,10 +51,10 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenAlertsHub,
   activeAlertCount = 0,
   onOpenMT5Panel,
-  mt5Balance = 3000.0,
+  mt5Balance = 100000.0,
   mt5Connected = true,
   onOpenDemoPanel,
-  demoBalance = 3000.0,
+  demoBalance = 100000.0,
   autoBotEnabled = true,
   externalQuotes,
 }) => {
@@ -80,12 +80,10 @@ export const Header: React.FC<HeaderProps> = ({
     }
   }, [externalQuotes]);
 
-  const isIndian = ["NIFTY", "BANKNIFTY", "CRUDEOIL", "NATURALGAS", "FINNIFTY", "SENSEX"].includes(activeSymbol);
-  const curSym = isIndian ? "₹" : "$";
-  const macroSymbols: AssetSymbol[] = ["DXY", "US10Y"];
-  const tradingAssets: AssetSymbol[] = isIndian
-    ? ["NIFTY", "BANKNIFTY", "CRUDEOIL", "NATURALGAS", "SENSEX"]
-    : ["XAUUSD", "XAGUSD", "USDJPY", "GBPUSD", "EURUSD"];
+  const isIndian = true;
+  const curSym = "₹";
+  const macroSymbols: AssetSymbol[] = ["INDIAVIX", "USDINR"];
+  const tradingAssets: AssetSymbol[] = ["NIFTY", "BANKNIFTY", "CRUDEOIL", "NATURALGAS", "SENSEX", "FINNIFTY"];
 
   return (
     <header className="sticky top-0 z-40 bg-terminal-bg/95 backdrop-blur border-b border-terminal-border">
@@ -97,17 +95,18 @@ export const Header: React.FC<HeaderProps> = ({
             LIVE FEED
           </div>
 
-          {/* Macro Dollar & Yield Barometer */}
+          {/* Indian Macro Barometer (INDIA VIX & USD/INR) */}
           <div className="flex items-center gap-3 pl-2 border-l border-terminal-border/50 text-[11px]">
             <span className="text-terminal-muted flex items-center gap-1">
-              <Activity className="w-3 h-3 text-accent" /> MACRO BAROMETER:
+              <Activity className="w-3 h-3 text-accent" /> MARKET BAROMETER:
             </span>
             {macroSymbols.map((sym) => {
-              const q = quotes[sym];
+              const q = quotes[sym] || INITIAL_QUOTES[sym];
+              if (!q) return null;
               const isPositive = q.change24h >= 0;
               return (
                 <div key={sym} className="flex items-center gap-1.5">
-                  <span className="font-bold text-gray-300">{sym}</span>
+                  <span className="font-bold text-gray-300">{sym === "INDIAVIX" ? "INDIA VIX" : "USD/INR"}</span>
                   <span className="font-mono text-white">{q.bid}</span>
                   <span className={`text-[10px] font-mono ${isPositive ? "text-bull" : "text-bear"}`}>
                     {isPositive ? "+" : ""}{q.change24h}%
@@ -117,11 +116,11 @@ export const Header: React.FC<HeaderProps> = ({
             })}
           </div>
 
-          {/* Gold / Silver Ratio */}
+          {/* MCX Commodity Energy Spread */}
           <div className="hidden lg:flex items-center gap-1.5 text-[11px] pl-2 border-l border-terminal-border/50">
-            <span className="text-terminal-muted">XAU/XAG Ratio:</span>
-            <span className="font-mono font-bold text-gold">
-              {(quotes.XAUUSD.bid / quotes.XAGUSD.bid).toFixed(2)}
+            <span className="text-terminal-muted">CRUDE / GAS RATIO:</span>
+            <span className="font-mono font-bold text-amber-400">
+              {((quotes.CRUDEOIL?.bid || 7660) / ((quotes.NATURALGAS?.bid || 258.2) * 10)).toFixed(2)}
             </span>
           </div>
         </div>
@@ -130,7 +129,7 @@ export const Header: React.FC<HeaderProps> = ({
         <div className="flex items-center gap-3 text-[11px] text-terminal-muted shrink-0">
           <div className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-bull-glow border border-bull/30 text-bull font-mono">
             <span className="w-1.5 h-1.5 rounded-full bg-bull"></span>
-            LONDON / NY ACTIVE
+            NSE F&O / MCX ACTIVE
           </div>
         </div>
       </div>
@@ -146,13 +145,13 @@ export const Header: React.FC<HeaderProps> = ({
             <div>
               <div className="flex items-center gap-1.5 font-bold tracking-tight text-white leading-none">
                 <span className="text-sm sm:text-base font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-blue-400 to-indigo-400">
-                  APEX<span className="text-gold">FX</span>
+                  APEX<span className="text-gold">PRO</span>
                 </span>
                 <span className="px-1.5 py-0.5 text-[8px] sm:text-[9px] font-mono bg-blue-500/20 text-cyan-400 rounded border border-cyan-500/30">
-                  PRO
+                  INDIA F&O
                 </span>
               </div>
-              <p className="text-[9px] sm:text-[10px] text-terminal-muted">{isIndian ? "Indian F&O & MCX Commodities" : "Metals & Major FX"}</p>
+              <p className="text-[9px] sm:text-[10px] text-terminal-muted">Indian Options & MCX Commodities</p>
             </div>
           </div>
 
@@ -175,7 +174,7 @@ export const Header: React.FC<HeaderProps> = ({
                   }`}
                 >
                   <div className="flex items-center gap-1 text-[11px] font-bold">
-                    <span className={sym.includes("XAU") ? "text-gold" : sym.includes("XAG") ? "text-silver" : ""}>
+                    <span className="text-white">
                       {sym}
                     </span>
                     {isUp ? (
@@ -290,20 +289,20 @@ export const Header: React.FC<HeaderProps> = ({
           <button
             onClick={onOpenLotCalc}
             className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-md bg-terminal-card hover:bg-terminal-hover text-gray-300 hover:text-white border border-terminal-border transition-all"
-            title="Gold & Forex Lot Size Risk Calculator"
+            title="Indian Options & MCX Lot Sizing & Risk Calculator"
           >
             <Calculator className="w-3.5 h-3.5 text-accent" />
-            <span>Lot Calculator</span>
+            <span>F&O Lots</span>
           </button>
 
           {/* Session Clock */}
           <button
             onClick={onOpenSessions}
             className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-md bg-terminal-card hover:bg-terminal-hover text-gray-300 hover:text-white border border-terminal-border transition-all"
-            title="Global Forex Sessions"
+            title="NSE F&O & MCX Market Timings"
           >
             <Clock className="w-3.5 h-3.5 text-gold" />
-            <span>Sessions</span>
+            <span>Market Hours</span>
           </button>
 
           {/* Settings */}
@@ -333,7 +332,7 @@ export const Header: React.FC<HeaderProps> = ({
                   : "border-terminal-border/40 text-terminal-muted hover:text-white"
               }`}
             >
-              <span className={sym.includes("XAU") ? "text-gold" : sym.includes("XAG") ? "text-silver" : ""}>
+              <span className="text-white">
                 {sym}
               </span>
               <span className={`text-[10px] ${isUp ? "text-bull" : "text-bear"}`}>

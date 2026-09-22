@@ -59,8 +59,6 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
   const livePriceLineRef = useRef<any>(null);
   const lastCandleRef = useRef<Candle | null>(null);
 
-  // Market mode: Indian Options (Default) vs Global FX
-  const [marketTab, setMarketTab] = useState<"INDIAN" | "GLOBAL">("INDIAN");
 
   // Mode: "smart" (Professional Interactive Lightweight Canvas with VP, SMC, Signals) or "tradingview" (External Iframe)
   const [chartMode, setChartMode] = useState<"tradingview" | "smart">("smart");
@@ -601,16 +599,7 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
     { sym: "FINNIFTY", label: "FIN NIFTY", badge: "F&O" },
   ];
 
-  const globalAssets: { sym: AssetSymbol; label: string; badge: string }[] = [
-    { sym: "XAUUSD", label: "GOLD", badge: "Spot" },
-    { sym: "XAGUSD", label: "SILVER", badge: "Spot" },
-    { sym: "EURUSD", label: "EUR/USD", badge: "FX" },
-    { sym: "GBPUSD", label: "GBP/USD", badge: "FX" },
-    { sym: "USDJPY", label: "USD/JPY", badge: "FX" },
-  ];
-
-  const isCurrentIndian = ["NIFTY", "BANKNIFTY", "CRUDEOIL", "NATURALGAS", "SENSEX", "FINNIFTY"].includes(activeSymbol);
-  const currentAssets = marketTab === "INDIAN" ? indianAssets : globalAssets;
+  const currentAssets = indianAssets;
 
   const getTradingViewSymbol = (sym: AssetSymbol): string => {
     switch (sym) {
@@ -620,13 +609,6 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
       case "NATURALGAS": return "MCX:NATURALGAS1!";
       case "SENSEX": return "BSE:SENSEX";
       case "FINNIFTY": return "NSE:FINNIFTY";
-      case "XAUUSD": return "OANDA:XAUUSD";
-      case "XAGUSD": return "OANDA:XAGUSD";
-      case "EURUSD": return "FX:EURUSD";
-      case "GBPUSD": return "FX:GBPUSD";
-      case "USDJPY": return "FX:USDJPY";
-      case "DXY": return "CAPITALCOM:DXY";
-      case "US10Y": return "TVC:US10Y";
       default: return "NSE:NIFTY";
     }
   };
@@ -655,34 +637,10 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
       <div className="flex flex-wrap items-center justify-between p-2 bg-[#0D121D] border-b border-terminal-border gap-2">
         {/* Left: Market Mode & Asset Select */}
         <div className="flex items-center gap-1.5 flex-wrap">
-          {/* Market Tab Switcher */}
-          <div className="flex items-center bg-[#070A10] rounded p-0.5 border border-terminal-border">
-            <button
-              onClick={() => {
-                setMarketTab("INDIAN");
-                if (!isCurrentIndian) onSelectSymbol("NIFTY");
-              }}
-              className={`px-2 py-0.5 text-[11px] font-bold rounded flex items-center gap-1 transition-all ${
-                marketTab === "INDIAN"
-                  ? "bg-amber-500/20 text-amber-300 border border-amber-500/50 shadow-sm"
-                  : "text-terminal-muted hover:text-gray-300"
-              }`}
-            >
-              <span>🇮🇳 Indian F&O & MCX</span>
-            </button>
-            <button
-              onClick={() => {
-                setMarketTab("GLOBAL");
-                if (isCurrentIndian) onSelectSymbol("XAUUSD");
-              }}
-              className={`px-2 py-0.5 text-[11px] font-bold rounded flex items-center gap-1 transition-all ${
-                marketTab === "GLOBAL"
-                  ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/50 shadow-sm"
-                  : "text-terminal-muted hover:text-gray-300"
-              }`}
-            >
-              <span>🌐 Global FX</span>
-            </button>
+          {/* Dedicated Indian Market Badge */}
+          <div className="flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-bold rounded bg-gradient-to-r from-amber-500/20 to-orange-500/20 text-amber-300 border border-amber-500/40 shadow-sm">
+            <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse"></span>
+            <span>🇮🇳 NSE F&O & MCX</span>
           </div>
 
           {/* Symbol Select Pills */}

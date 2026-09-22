@@ -95,11 +95,9 @@ export const EconomicCalendar: React.FC = () => {
             onChange={(e) => setCurrencyFilter(e.target.value)}
             className="bg-terminal-bg border border-terminal-border text-terminal-muted text-[11px] rounded px-1.5 py-0.5 focus:outline-none"
           >
-            <option value="ALL">All Currencies</option>
-            <option value="USD">USD</option>
-            <option value="EUR">EUR</option>
-            <option value="GBP">GBP</option>
-            <option value="JPY">JPY</option>
+            <option value="ALL">All Catalysts</option>
+            <option value="INR">INR (RBI / India)</option>
+            <option value="USD">USD (EIA Energy)</option>
           </select>
         </div>
       </div>

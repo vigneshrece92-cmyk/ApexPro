@@ -18,14 +18,12 @@ export const CurrencyStrengthMeter: React.FC<CurrencyStrengthMeterProps> = ({
   const strengths: CurrencyStrength[] = React.useMemo(() => {
     return DEFAULT_CURRENCY_STRENGTH.map((item) => {
       let liveChange = item.change;
-      if (item.currency === "XAU" && externalQuotes?.XAUUSD) {
-        liveChange = externalQuotes.XAUUSD.change24h;
-      } else if (item.currency === "EUR" && externalQuotes?.EURUSD) {
-        liveChange = externalQuotes.EURUSD.change24h;
-      } else if (item.currency === "GBP" && externalQuotes?.GBPUSD) {
-        liveChange = externalQuotes.GBPUSD.change24h;
-      } else if (item.currency === "USD" && externalQuotes?.DXY) {
-        liveChange = externalQuotes.DXY.change24h;
+      if (item.currency === "BANKING" && externalQuotes?.BANKNIFTY) {
+        liveChange = externalQuotes.BANKNIFTY.change24h;
+      } else if (item.currency === "ENERGY" && externalQuotes?.CRUDEOIL) {
+        liveChange = externalQuotes.CRUDEOIL.change24h;
+      } else if (item.currency === "NIFTY 50" && externalQuotes?.NIFTY) {
+        liveChange = externalQuotes.NIFTY.change24h;
       }
 
       // Convert change to relative strength score (0-100)
@@ -56,10 +54,10 @@ export const CurrencyStrengthMeter: React.FC<CurrencyStrengthMeterProps> = ({
           </div>
           <div>
             <h2 className="text-xs font-bold uppercase tracking-wider text-white">
-              Currency & Metals Strength Meter
+              NSE & MCX Sectoral Strength Meter
             </h2>
             <p className="text-[10px] text-terminal-muted">
-              Live relative momentum index across major FX & Gold
+              Live relative momentum across Bank Nifty, MCX Energy, IT & Auto sectors
             </p>
           </div>
         </div>
@@ -141,14 +139,14 @@ export const CurrencyStrengthMeter: React.FC<CurrencyStrengthMeterProps> = ({
 
             <button
               onClick={() => {
-                if (strongest.currency === "XAU" || weakest.currency === "USD") {
-                  onSelectSymbol("XAUUSD");
-                } else if (strongest.currency === "GBP") {
-                  onSelectSymbol("GBPUSD");
-                } else if (strongest.currency === "EUR") {
-                  onSelectSymbol("EURUSD");
+                if (strongest.currency === "BANKING") {
+                  onSelectSymbol("BANKNIFTY");
+                } else if (strongest.currency === "ENERGY") {
+                  onSelectSymbol("CRUDEOIL");
+                } else if (strongest.currency === "NATURAL GAS") {
+                  onSelectSymbol("NATURALGAS");
                 } else {
-                  onSelectSymbol("XAUUSD");
+                  onSelectSymbol("NIFTY");
                 }
               }}
               className="px-2 py-1 text-[10px] font-bold rounded bg-accent/20 hover:bg-accent/30 text-accent border border-accent/40 transition-all"

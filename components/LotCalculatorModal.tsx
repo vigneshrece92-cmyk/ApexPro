@@ -3,7 +3,8 @@
 import React, { useState } from "react";
 import { AssetSymbol } from "@/lib/types";
 import { INITIAL_QUOTES } from "@/lib/defaultData";
-import { Calculator, X, AlertCircle, ShieldCheck, DollarSign } from "lucide-react";
+import { getOptionSpec } from "@/lib/optionsEngine";
+import { Calculator, X, ShieldCheck } from "lucide-react";
 
 interface LotCalculatorModalProps {
   isOpen: boolean;
@@ -14,35 +15,37 @@ interface LotCalculatorModalProps {
 export const LotCalculatorModal: React.FC<LotCalculatorModalProps> = ({
   isOpen,
   onClose,
-  defaultSymbol = "XAUUSD",
+  defaultSymbol = "NIFTY",
 }) => {
-  const [symbol, setSymbol] = useState<AssetSymbol>(defaultSymbol);
-  const [balance, setBalance] = useState<number>(10000);
-  const [riskPercent, setRiskPercent] = useState<number>(1);
-  const [stopLossPips, setStopLossPips] = useState<number>(40); // 40 pips default ($4.00 on Gold)
+  const [symbol, setSymbol] = useState<AssetSymbol>(
+    ["NIFTY", "BANKNIFTY", "CRUDEOIL", "NATURALGAS", "SENSEX", "FINNIFTY"].includes(defaultSymbol)
+      ? defaultSymbol
+      : "NIFTY"
+  );
+  const [balance, setBalance] = useState<number>(100000);
+  const [riskPercent, setRiskPercent] = useState<number>(1.5);
+  const [stopLossPoints, setStopLossPoints] = useState<number>(25);
 
   if (!isOpen) return null;
 
-  const quote = INITIAL_QUOTES[symbol] || INITIAL_QUOTES.XAUUSD;
+  const quote = INITIAL_QUOTES[symbol] || INITIAL_QUOTES.NIFTY;
+  const spec = getOptionSpec(symbol);
   const riskAmount = (balance * riskPercent) / 100;
 
-  // Exact contract calculations
-  let pipValuePerStandardLot = 10; // USD default for 1 standard lot of EURUSD
-  if (symbol === "XAUUSD") {
-    // 1 standard lot = 100 oz. 1 pip = $0.10 move = $10. $1 move = 10 pips = $100.
-    pipValuePerStandardLot = 10;
-  } else if (symbol === "XAGUSD") {
-    // 1 standard lot = 5000 oz. 1 pip = 0.01 = $50.
-    pipValuePerStandardLot = 50;
-  } else if (symbol === "USDJPY") {
-    // 1 standard lot = 1000 yen / exchange rate (~$6.7)
-    pipValuePerStandardLot = 1000 / (quote.bid || 148);
-  }
+  // Total risk per 1 lot = Stop loss points * Lot size
+  const riskPerLot = Math.max(0.5, stopLossPoints) * spec.lotSize;
+  const recommendedLots = Math.max(1, Math.floor(riskAmount / riskPerLot));
+  const totalQuantity = recommendedLots * spec.lotSize;
+  const actualRisk = +(recommendedLots * riskPerLot).toFixed(0);
 
-  // Lot size formula: Risk Amount / (SL in pips * Pip Value per standard lot)
-  const lotSizeRaw = riskAmount / (Math.max(1, stopLossPips) * pipValuePerStandardLot);
-  const recommendedLots = +Math.max(0.01, lotSizeRaw).toFixed(2);
-  const totalPositionValue = +(recommendedLots * quote.bid * (symbol === "XAUUSD" ? 100 : symbol === "XAGUSD" ? 5000 : 1000)).toFixed(0);
+  const indianSymbols: { sym: AssetSymbol; label: string; lot: number }[] = [
+    { sym: "NIFTY", label: "NIFTY 50", lot: 25 },
+    { sym: "BANKNIFTY", label: "BANK NIFTY", lot: 15 },
+    { sym: "CRUDEOIL", label: "CRUDE OIL", lot: 100 },
+    { sym: "NATURALGAS", label: "NAT GAS", lot: 1250 },
+    { sym: "SENSEX", label: "SENSEX", lot: 10 },
+    { sym: "FINNIFTY", label: "FIN NIFTY", lot: 25 },
+  ];
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in">
@@ -54,8 +57,8 @@ export const LotCalculatorModal: React.FC<LotCalculatorModalProps> = ({
               <Calculator className="w-4 h-4" />
             </div>
             <div>
-              <h3 className="text-sm font-bold text-white">Gold & FX Risk / Lot Calculator</h3>
-              <p className="text-[10px] text-terminal-muted">Institutional 1% Risk Management</p>
+              <h3 className="text-sm font-bold text-white">Indian F&O & MCX Lot Calculator</h3>
+              <p className="text-[10px] text-terminal-muted">Exchange Lot Size & Capital Risk Budgeting</p>
             </div>
           </div>
           <button
@@ -70,19 +73,26 @@ export const LotCalculatorModal: React.FC<LotCalculatorModalProps> = ({
         <div className="p-4 space-y-4 text-xs font-mono">
           {/* Asset Selection */}
           <div>
-            <label className="text-[11px] text-terminal-muted block mb-1">Trading Asset</label>
-            <div className="grid grid-cols-5 gap-1">
-              {(["XAUUSD", "XAGUSD", "EURUSD", "GBPUSD", "USDJPY"] as AssetSymbol[]).map((s) => (
+            <label className="text-[11px] text-terminal-muted block mb-1">Exchange Instrument</label>
+            <div className="grid grid-cols-3 gap-1.5">
+              {indianSymbols.map((item) => (
                 <button
-                  key={s}
-                  onClick={() => setSymbol(s)}
-                  className={`py-1.5 text-[11px] font-bold rounded border transition-all ${
-                    symbol === s
+                  key={item.sym}
+                  onClick={() => {
+                    setSymbol(item.sym);
+                    if (item.sym === "CRUDEOIL") setStopLossPoints(35);
+                    else if (item.sym === "NATURALGAS") setStopLossPoints(2.5);
+                    else if (item.sym === "BANKNIFTY") setStopLossPoints(70);
+                    else setStopLossPoints(25);
+                  }}
+                  className={`py-1.5 px-2 text-[11px] font-bold rounded border transition-all flex flex-col items-center ${
+                    symbol === item.sym
                       ? "bg-cyan-500/20 border-cyan-500 text-cyan-300"
                       : "bg-terminal-bg border-terminal-border text-gray-400 hover:text-white"
                   }`}
                 >
-                  {s}
+                  <span>{item.label}</span>
+                  <span className="text-[9px] text-terminal-muted font-normal">{item.lot} Qty/Lot</span>
                 </button>
               ))}
             </div>
@@ -90,13 +100,13 @@ export const LotCalculatorModal: React.FC<LotCalculatorModalProps> = ({
 
           {/* Account Balance */}
           <div>
-            <label className="text-[11px] text-terminal-muted block mb-1">Account Balance ($ USD)</label>
+            <label className="text-[11px] text-terminal-muted block mb-1">Trading Capital (₹ INR)</label>
             <div className="relative">
-              <span className="absolute left-2.5 top-2 text-gray-400">$</span>
+              <span className="absolute left-2.5 top-2 text-gray-400 font-bold">₹</span>
               <input
                 type="number"
                 value={balance}
-                onChange={(e) => setBalance(Math.max(100, Number(e.target.value)))}
+                onChange={(e) => setBalance(Math.max(1000, Number(e.target.value)))}
                 className="w-full bg-terminal-bg border border-terminal-border rounded px-7 py-1.5 text-white font-bold focus:outline-none focus:border-cyan-500"
               />
             </div>
@@ -105,11 +115,11 @@ export const LotCalculatorModal: React.FC<LotCalculatorModalProps> = ({
           {/* Risk Percentage */}
           <div>
             <div className="flex items-center justify-between mb-1">
-              <label className="text-[11px] text-terminal-muted">Risk Percentage</label>
-              <span className="text-cyan-400 font-bold">{riskPercent}% (${riskAmount.toFixed(2)})</span>
+              <label className="text-[11px] text-terminal-muted">Risk Budget per Trade</label>
+              <span className="text-cyan-400 font-bold">{riskPercent}% (₹{riskAmount.toLocaleString("en-IN")})</span>
             </div>
             <div className="grid grid-cols-4 gap-1.5 mb-2">
-              {[0.5, 1.0, 1.5, 2.0].map((r) => (
+              {[1.0, 1.5, 2.0, 3.0].map((r) => (
                 <button
                   key={r}
                   onClick={() => setRiskPercent(r)}
@@ -128,18 +138,17 @@ export const LotCalculatorModal: React.FC<LotCalculatorModalProps> = ({
           {/* Stop Loss Distance */}
           <div>
             <label className="text-[11px] text-terminal-muted block mb-1">
-              Stop Loss Distance ({symbol === "XAUUSD" ? "Pips / $0.10 increments" : "Pips"})
+              Stop Loss Buffer (Points in Premium / Spot)
             </label>
             <input
               type="number"
-              value={stopLossPips}
-              onChange={(e) => setStopLossPips(Math.max(1, Number(e.target.value)))}
+              step={symbol === "NATURALGAS" ? "0.1" : "1"}
+              value={stopLossPoints}
+              onChange={(e) => setStopLossPoints(Math.max(0.1, Number(e.target.value)))}
               className="w-full bg-terminal-bg border border-terminal-border rounded px-3 py-1.5 text-white font-bold focus:outline-none focus:border-cyan-500"
             />
             <p className="text-[10px] text-terminal-muted mt-1">
-              {symbol === "XAUUSD"
-                ? `40 pips on Gold = $4.00 price distance (e.g. from $2,642 to $2,638)`
-                : `Standard 1 pip = 0.0001 (0.01 on JPY pairs)`}
+              {stopLossPoints} points risk × {spec.lotSize} contract size = ₹{riskPerLot.toLocaleString("en-IN")} risk per 1 lot.
             </p>
           </div>
 
@@ -147,20 +156,20 @@ export const LotCalculatorModal: React.FC<LotCalculatorModalProps> = ({
           <div className="p-3 rounded-lg bg-gradient-to-br from-[#0F1829] to-[#0A101C] border border-cyan-500/30 space-y-2">
             <div className="flex items-center justify-between">
               <span className="text-terminal-muted text-[11px]">Recommended Position Size:</span>
-              <span className="text-base font-extrabold text-bull font-mono">{recommendedLots} Lots</span>
+              <span className="text-base font-extrabold text-bull font-mono">{recommendedLots} Lot{recommendedLots > 1 ? "s" : ""}</span>
             </div>
             <div className="flex items-center justify-between text-[11px]">
-              <span className="text-terminal-muted">Max Dollar Risk:</span>
-              <span className="text-bear font-bold">${riskAmount.toFixed(2)}</span>
+              <span className="text-terminal-muted">Total Quantity:</span>
+              <span className="text-white font-bold">{totalQuantity} Qty</span>
             </div>
             <div className="flex items-center justify-between text-[11px]">
-              <span className="text-terminal-muted">Pip Value @ {recommendedLots} Lots:</span>
-              <span className="text-white font-bold">${(recommendedLots * pipValuePerStandardLot).toFixed(2)} / pip</span>
+              <span className="text-terminal-muted">Max Trade Risk:</span>
+              <span className="text-bear font-bold">₹{actualRisk.toLocaleString("en-IN")}</span>
             </div>
             <div className="flex items-center justify-between text-[11px]">
-              <span className="text-terminal-muted">1 Standard Lot Spec:</span>
+              <span className="text-terminal-muted">Exchange Contract Spec:</span>
               <span className="text-gray-400">
-                {symbol === "XAUUSD" ? "100 Troy Ounces" : symbol === "XAGUSD" ? "5,000 Ounces" : "100,000 Units"}
+                {symbol}: 1 Lot = {spec.lotSize} Qty (Step: {spec.strikeStep})
               </span>
             </div>
           </div>

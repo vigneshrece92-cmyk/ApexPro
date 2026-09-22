@@ -572,9 +572,7 @@ export function generateDynamicLiveAlert(
   patternPreference?: AlertPatternType
 ): InstitutionalAlert {
   const currentQuote = quote || INITIAL_QUOTES[symbol];
-  const precision =
-    currentQuote?.pipPrecision ??
-    (symbol === "EURUSD" || symbol === "GBPUSD" ? 5 : symbol === "XAGUSD" || symbol === "USDJPY" ? 3 : 2);
+  const precision = currentQuote?.pipPrecision ?? 2;
   const currentPrice = +(
     currentQuote?.bid ?? (candles.length > 0 ? candles[candles.length - 1].close : 100)
   ).toFixed(precision);
@@ -597,13 +595,17 @@ export function generateDynamicLiveAlert(
 
   const pattern =
     patternPreference ||
-    (symbol === "XAUUSD"
+    (symbol === "NIFTY"
       ? "4H_BREAKOUT_RETEST"
-      : symbol === "XAGUSD"
+      : symbol === "BANKNIFTY"
       ? "AMD_ACCUMULATION_DISTRIBUTION"
-      : symbol === "EURUSD"
+      : symbol === "CRUDEOIL"
       ? "FVG_MITIGATION"
-      : "4H_BREAKOUT_RETEST");
+      : symbol === "NATURALGAS"
+      ? "4H_BREAKOUT_RETEST"
+      : symbol === "SENSEX"
+      ? "AMD_ACCUMULATION_DISTRIBUTION"
+      : "ICT_SILVER_BULLET");
 
   if (pattern === "AMD_ACCUMULATION_DISTRIBUTION") {
     const accumHigh = +(swingHigh - atr * 0.25).toFixed(precision);
@@ -750,10 +752,11 @@ export function generateDynamicLiveAlert(
 export function getInitialInstitutionalAlerts(quotes?: Record<AssetSymbol, Quote>): InstitutionalAlert[] {
   const qMap = quotes || INITIAL_QUOTES;
   return [
-    generateDynamicLiveAlert("XAUUSD", "Gold / US Dollar", [], qMap.XAUUSD, "4H_BREAKOUT_RETEST"),
-    generateDynamicLiveAlert("XAGUSD", "Silver / US Dollar", [], qMap.XAGUSD, "AMD_ACCUMULATION_DISTRIBUTION"),
-    generateDynamicLiveAlert("GBPUSD", "British Pound / US Dollar", [], qMap.GBPUSD, "4H_BREAKOUT_RETEST"),
-    generateDynamicLiveAlert("EURUSD", "Euro / US Dollar", [], qMap.EURUSD, "FVG_MITIGATION"),
-    generateDynamicLiveAlert("XAUUSD", "Gold / US Dollar", [], qMap.XAUUSD, "ICT_SILVER_BULLET"),
+    generateDynamicLiveAlert("NIFTY", "NIFTY 50 Index (F&O)", [], qMap.NIFTY, "4H_BREAKOUT_RETEST"),
+    generateDynamicLiveAlert("BANKNIFTY", "BANK NIFTY Index (F&O)", [], qMap.BANKNIFTY, "AMD_ACCUMULATION_DISTRIBUTION"),
+    generateDynamicLiveAlert("CRUDEOIL", "CRUDE OIL (MCX Futures)", [], qMap.CRUDEOIL, "4H_BREAKOUT_RETEST"),
+    generateDynamicLiveAlert("NATURALGAS", "NATURAL GAS (MCX Futures)", [], qMap.NATURALGAS, "FVG_MITIGATION"),
+    generateDynamicLiveAlert("SENSEX", "BSE SENSEX Index", [], qMap.SENSEX, "ICT_SILVER_BULLET"),
+    generateDynamicLiveAlert("FINNIFTY", "NIFTY FINANCIAL SERVICES", [], qMap.FINNIFTY, "4H_BREAKOUT_RETEST"),
   ];
 }

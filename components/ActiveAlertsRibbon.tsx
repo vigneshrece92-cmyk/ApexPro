@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import React from "react";
 import { InstitutionalAlert, AssetSymbol } from "@/lib/types";
@@ -48,7 +48,7 @@ export const ActiveAlertsRibbon: React.FC<ActiveAlertsRibbonProps> = ({
               className="flex items-center gap-2 px-3 py-1 rounded-md bg-terminal-bg hover:bg-terminal-card border border-terminal-border/80 text-gray-200 hover:text-white transition-all shrink-0 group"
             >
               <div className="flex items-center gap-1 font-bold">
-                <span className={a.symbol.includes("XAU") ? "text-gold" : a.symbol.includes("XAG") ? "text-silver" : "text-white"}>
+                <span className="text-white">
                   {a.symbol}
                 </span>
                 <span

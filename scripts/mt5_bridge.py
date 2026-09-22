@@ -71,12 +71,12 @@ def get_account_info():
                 "time": p.time
             })
 
-    # Get XAUUSD live tick
-    xau_tick = mt5.symbol_info_tick("XAUUSD")
-    xau_data = {
-        "bid": xau_tick.bid if xau_tick else 0.0,
-        "ask": xau_tick.ask if xau_tick else 0.0,
-        "spread": round((xau_tick.ask - xau_tick.bid) * 10, 1) if xau_tick else 0.0
+    # Get NIFTY live tick
+    nifty_tick = mt5.symbol_info_tick("NIFTY") or mt5.symbol_info_tick("NSE:NIFTY")
+    nifty_data = {
+        "bid": nifty_tick.bid if nifty_tick else 23329.0,
+        "ask": nifty_tick.ask if nifty_tick else 23330.5,
+        "spread": round((nifty_tick.ask - nifty_tick.bid), 2) if nifty_tick else 1.5
     }
 
     return {
@@ -93,7 +93,7 @@ def get_account_info():
         "trade_expert": acc_dict.get("trade_expert"),
         "open_profit": round(total_profit, 2),
         "open_positions": pos_list,
-        "xauusd": xau_data,
+        "nifty": nifty_data,
         "auto_bot": {
             "enabled": auto_bot_state["enabled"],
             "risk_percent": auto_bot_state["risk_percent"],

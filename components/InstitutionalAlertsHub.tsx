@@ -115,7 +115,7 @@ export const InstitutionalAlertsHub: React.FC<InstitutionalAlertsHubProps> = ({
 
   const handleCopyAlertScript = (alert: InstitutionalAlert) => {
     const isBuy = alert.direction.includes("BUY");
-    const script = `// ApexFX 4H Order Script - ${alert.symbol}
+    const script = `// Apex Pro Indian Options & MCX Order Setup - ${alert.symbol}
 // Setup: ${alert.title}
 ${isBuy ? "BUY" : "SELL"} LIMIT ${alert.symbol}
 Entry: ${alert.suggestedEntry}
@@ -386,10 +386,10 @@ Confidence: ${alert.confidenceScore}%`;
                           else if (onOpenMT5PanelWithAlert) onOpenMT5PanelWithAlert(alert);
                         }}
                         className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white border border-emerald-400/40 text-xs font-bold transition-all shadow-md shadow-emerald-600/20"
-                        title="Execute this trade directly on your internal $3,000 Demo Account (100% Vercel Ready)"
+                        title="Execute this trade directly on your internal ₹1,00,000 Virtual Broker"
                       >
                         <Zap className="w-3.5 h-3.5 text-yellow-300 animate-pulse" />
-                        <span>Execute on Demo ($3k)</span>
+                        <span>Execute on Demo (₹1L)</span>
                       </button>
                     )}
 
@@ -397,7 +397,7 @@ Confidence: ${alert.confidenceScore}%`;
                       <button
                         onClick={() => handleCopyAlertScript(alert)}
                         className="flex items-center gap-1 px-2.5 py-1.5 rounded bg-terminal-card hover:bg-terminal-hover text-gray-300 hover:text-white border border-terminal-border text-xs transition-colors"
-                        title="Copy MT4/MT5 Pending Order Script"
+                        title="Copy Order Specifications"
                       >
                         {copiedId === alert.id ? (
                           <Check className="w-3.5 h-3.5 text-bull" />
@@ -427,7 +427,7 @@ Confidence: ${alert.confidenceScore}%`;
 
         {/* Modal Footer */}
         <div className="p-3 bg-[#080B10] border-t border-terminal-border flex items-center justify-between text-xs text-terminal-muted">
-          <span>ApexFX 4H Institutional Breakout & Retest Scanner</span>
+          <span>Apex Pro Indian Options & MCX Institutional Scanner</span>
           <button
             onClick={onClose}
             className="px-3 py-1 rounded bg-terminal-bg hover:bg-terminal-hover text-gray-300 border border-terminal-border transition-colors text-xs"

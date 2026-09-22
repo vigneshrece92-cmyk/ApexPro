@@ -68,58 +68,52 @@ export interface DemoAccountState {
   };
 }
 
-const STORAGE_KEY = "apexfx_demo_broker_v3";
+const STORAGE_KEY = "apex_pro_indian_broker_v4";
 
 export const INITIAL_DEMO_BALANCE = 100000.0;
 export const DEFAULT_LEVERAGE = 1000;
 
 /**
- * Checks whether the interbank Forex & Spot Gold market is currently open.
- * Global Forex market closes Friday 5:00 PM NY EST (21:00 UTC) and reopens Sunday 5:00 PM NY EST (21:00 UTC).
+ * Checks whether the Indian NSE/BSE & MCX Commodity market is currently open.
+ * NSE F&O: 09:15 AM - 03:30 PM IST (Mon-Fri)
+ * MCX Day & Evening: 09:00 AM - 11:30 PM IST (Mon-Fri)
  */
-export function isForexMarketOpen(now = new Date()): {
+export function isIndianMarketOpen(now = new Date()): {
   isOpen: boolean;
   statusText: string;
 } {
-  const day = now.getUTCDay(); // 0 = Sun, 5 = Fri, 6 = Sat
-  const hour = now.getUTCHours();
-  const minute = now.getUTCMinutes();
+  const istDate = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
+  const day = istDate.getDay(); // 0 = Sun, 6 = Sat
+  const hour = istDate.getHours();
+  const minute = istDate.getMinutes();
+  const totalMin = hour * 60 + minute;
 
-  // Friday after 21:00 UTC
-  if (day === 5 && hour >= 21) {
-    const hoursLeft = (24 - hour - 1) + 24 + 21;
-    const minsLeft = 60 - minute;
+  if (day === 0 || day === 6) {
     return {
       isOpen: false,
-      statusText: `Weekend Closed (Opens in ${hoursLeft}h ${minsLeft}m at Sun 5:00 PM EST)`,
+      statusText: "Weekend Closed (Opens Monday 09:00 AM IST)",
     };
   }
 
-  // Saturday (all day)
-  if (day === 6) {
-    const hoursLeft = (24 - hour - 1) + 21;
-    const minsLeft = 60 - minute;
+  // MCX is open till 11:30 PM (23:30)
+  if (totalMin >= 9 * 60 && totalMin <= 23 * 60 + 30) {
+    const isNse = totalMin >= 9 * 60 + 15 && totalMin <= 15 * 60 + 30;
     return {
-      isOpen: false,
-      statusText: `Weekend Closed (Opens in ${hoursLeft}h ${minsLeft}m at Sun 5:00 PM EST)`,
-    };
-  }
-
-  // Sunday before 21:00 UTC
-  if (day === 0 && hour < 21) {
-    const hoursLeft = 21 - hour - 1;
-    const minsLeft = 60 - minute;
-    return {
-      isOpen: false,
-      statusText: `Weekend Closed (Opens in ${hoursLeft}h ${minsLeft}m at Sun 5:00 PM EST)`,
+      isOpen: true,
+      statusText: isNse
+        ? "NSE F&O & MCX Sessions Active (09:15 - 15:30 IST)"
+        : "MCX Commodity Evening Session Active (till 23:30 IST)",
     };
   }
 
   return {
-    isOpen: true,
-    statusText: "Market Open (Live Interbank Session)",
+    isOpen: false,
+    statusText: "Overnight Closed (Reopens 09:00 AM IST)",
   };
 }
+
+// Alias for seamless backward compatibility
+export const isForexMarketOpen = isIndianMarketOpen;
 
 export const INITIAL_ACCOUNT_STATE: DemoAccountState = {
   balance: INITIAL_DEMO_BALANCE,
@@ -174,17 +168,19 @@ export function loadDemoAccount(): DemoAccountState {
           .filter((p: any) => p && typeof p === "object")
           .map((p: any) => ({
             ticket: typeof p.ticket === "number" ? p.ticket : Math.floor(1000000 + Math.random() * 9000000),
-            symbol: (p.symbol as AssetSymbol) || "XAUUSD",
+            symbol: (p.symbol as AssetSymbol) || "NIFTY",
             type: p.type === "SELL" ? "SELL" : "BUY",
-            volume: typeof p.volume === "number" && !isNaN(p.volume) ? p.volume : 0.02,
-            price_open: typeof p.price_open === "number" && !isNaN(p.price_open) ? p.price_open : 4363.80,
-            sl: typeof p.sl === "number" && !isNaN(p.sl) ? p.sl : 4350.0,
-            tp: typeof p.tp === "number" && !isNaN(p.tp) ? p.tp : 4385.0,
-            price_current: typeof p.price_current === "number" && !isNaN(p.price_current) ? p.price_current : (p.price_open || 4363.80),
+            volume: typeof p.volume === "number" && !isNaN(p.volume) ? p.volume : 1.0,
+            price_open: typeof p.price_open === "number" && !isNaN(p.price_open) ? p.price_open : 23320.00,
+            sl: typeof p.sl === "number" && !isNaN(p.sl) ? p.sl : 23285.0,
+            tp: typeof p.tp === "number" && !isNaN(p.tp) ? p.tp : 23360.0,
+            price_current: typeof p.price_current === "number" && !isNaN(p.price_current) ? p.price_current : (p.price_open || 23320.00),
             profit: typeof p.profit === "number" && !isNaN(p.profit) ? p.profit : 0,
-            comment: typeof p.comment === "string" ? p.comment : "ApexFX 4H PO3",
+            comment: typeof p.comment === "string" ? p.comment : "PAVP Volume Profile",
             time: typeof p.time === "number" ? p.time : Date.now(),
             be_triggered: !!p.be_triggered,
+            optionContractName: p.optionContractName || "NIFTY 23300 CE",
+            currency: p.currency || "₹",
           }))
       : [];
 
@@ -193,18 +189,20 @@ export function loadDemoAccount(): DemoAccountState {
           .filter((h: any) => h && typeof h === "object")
           .map((h: any) => ({
             ticket: typeof h.ticket === "number" ? h.ticket : Math.floor(1000000 + Math.random() * 9000000),
-            symbol: (h.symbol as AssetSymbol) || "XAUUSD",
+            symbol: (h.symbol as AssetSymbol) || "NIFTY",
             type: h.type === "SELL" ? "SELL" : "BUY",
-            volume: typeof h.volume === "number" && !isNaN(h.volume) ? h.volume : 0.02,
-            price_open: typeof h.price_open === "number" && !isNaN(h.price_open) ? h.price_open : 4363.80,
-            price_close: typeof h.price_close === "number" && !isNaN(h.price_close) ? h.price_close : 4365.0,
-            sl: typeof h.sl === "number" && !isNaN(h.sl) ? h.sl : 4360.0,
-            tp: typeof h.tp === "number" && !isNaN(h.tp) ? h.tp : 4400.0,
-            profit: typeof h.profit === "number" && !isNaN(h.profit) ? h.profit : 0,
-            return_percent: typeof h.return_percent === "number" && !isNaN(h.return_percent) ? h.return_percent : 0,
+            volume: typeof h.volume === "number" && !isNaN(h.volume) ? h.volume : 1.0,
+            price_open: typeof h.price_open === "number" && !isNaN(h.price_open) ? h.price_open : 23320.00,
+            price_close: typeof h.price_close === "number" && !isNaN(h.price_close) ? h.price_close : 23360.00,
+            sl: typeof h.sl === "number" && !isNaN(h.sl) ? h.sl : 23285.0,
+            tp: typeof h.tp === "number" && !isNaN(h.tp) ? h.tp : 23360.0,
+            profit: typeof h.profit === "number" && !isNaN(h.profit) ? h.profit : 1000,
+            return_percent: typeof h.return_percent === "number" && !isNaN(h.return_percent) ? h.return_percent : 1.0,
             open_time: typeof h.open_time === "number" ? h.open_time : Date.now() - 60000,
             close_time: typeof h.close_time === "number" ? h.close_time : Date.now(),
-            close_reason: typeof h.close_reason === "string" ? h.close_reason : "Manual Exit",
+            close_reason: typeof h.close_reason === "string" ? h.close_reason : "Take Profit Hit",
+            optionContractName: h.optionContractName || "NIFTY 23300 CE",
+            currency: h.currency || "₹",
           }))
       : [];
 
@@ -243,21 +241,30 @@ export function saveDemoAccount(state: DemoAccountState): void {
 }
 
 /**
- * Reset account back to pristine $3,000
+ * Reset account back to pristine ₹1,00,000
  */
 export function resetDemoAccount(): DemoAccountState {
   const resetState: DemoAccountState = {
     ...INITIAL_ACCOUNT_STATE,
+    balance: INITIAL_DEMO_BALANCE,
+    equity: INITIAL_DEMO_BALANCE,
+    margin: 0,
+    margin_free: INITIAL_DEMO_BALANCE,
+    open_profit: 0,
+    open_positions: [],
+    history: [],
+    currency: "₹",
     auto_bot: {
       enabled: true,
       risk_percent: 1.0,
       market_mode: "24_7_PRACTICE",
+      strategy_mode: "VOLUME_PROFILE_ONLY",
       logs: [
         {
           id: `rst-${Date.now()}`,
           timestamp: Date.now(),
           type: "info",
-          message: "Account reset to initial $3,000.00 demo balance. 4H PO3 Auto-Bot active & scanning.",
+          message: "Account reset to initial ₹1,00,000.00 demo balance. Pivot-Anchored Volume Profile (PAVP) Auto-Bot active & scanning.",
         },
       ],
     },
@@ -274,9 +281,6 @@ export function resetDemoAccount(): DemoAccountState {
  * SENSEX: 10 qty per lot
  * CRUDEOIL (MCX): 100 bbl per lot
  * NATURALGAS (MCX): 1250 mmBtu per lot
- * XAUUSD: 100 oz per lot
- * XAGUSD: 5000 oz per lot
- * Forex: 100,000 units per lot
  */
 export function getContractSize(symbol: AssetSymbol, pos?: DemoPosition): number {
   if (pos?.lotSizeMultiplier && pos.lotSizeMultiplier > 0) return pos.lotSizeMultiplier;
@@ -285,9 +289,7 @@ export function getContractSize(symbol: AssetSymbol, pos?: DemoPosition): number
   if (symbol === "SENSEX") return 10;
   if (symbol === "CRUDEOIL") return 100;
   if (symbol === "NATURALGAS") return 1250;
-  if (symbol === "XAUUSD") return 100;
-  if (symbol === "XAGUSD") return 5000;
-  return 100000;
+  return 25;
 }
 
 /**
@@ -519,11 +521,12 @@ export function closeDemoPosition(
   const nextEquity = Math.round((nextBalance + totalFloatingProfit) * 100) / 100;
   const nextMarginFree = Math.round((nextEquity - totalMargin) * 100) / 100;
 
+  const cur = pos.currency || state.currency || "₹";
   const logMessage: AutoBotLog = {
     id: `log-close-${Date.now()}-${Math.random()}`,
     timestamp: Date.now(),
     type: profit >= 0 ? "success" : "warning",
-    message: `[Closed #${pos.ticket}] ${pos.type} ${pos.volume} ${pos.symbol} closed @ $${closePrice.toFixed(2)}. P&L: ${profit >= 0 ? "+" : ""}$${profit.toFixed(2)} (${reason}).`,
+    message: `[Closed #${pos.ticket}] ${pos.optionContractName || `${pos.type} ${pos.volume} ${pos.symbol}`} closed @ ${cur}${closePrice.toFixed(2)}. P&L: ${profit >= 0 ? "+" : ""}${cur}${profit.toFixed(2)} (${reason}).`,
   };
 
   const nextLogs = [logMessage, ...state.auto_bot.logs].slice(0, 50);
@@ -547,7 +550,7 @@ export function closeDemoPosition(
   return {
     success: true,
     state: nextState,
-    message: `Position #${ticket} closed. Realized P&L: ${profit >= 0 ? "+" : ""}$${profit.toFixed(2)}`,
+    message: `Position #${ticket} closed. Realized P&L: ${profit >= 0 ? "+" : ""}${cur}${profit.toFixed(2)}`,
   };
 }
 
@@ -564,7 +567,8 @@ export function setPositionBreakEven(
   }
 
   const pos = state.open_positions[posIndex];
-  // Entry price with small 0.20 point buffer
+  const cur = pos.currency || state.currency || "₹";
+  // Entry price with small buffer
   const newSL = pos.type === "BUY" ? pos.price_open + 0.2 : pos.price_open - 0.2;
 
   const updatedPos: DemoPosition = {
@@ -580,7 +584,7 @@ export function setPositionBreakEven(
     id: `log-be-${Date.now()}`,
     timestamp: Date.now(),
     type: "info",
-    message: `[Break-Even #${ticket}] Stop Loss moved to $${updatedPos.sl.toFixed(2)} (Entry Defense). Trade is now 100% risk-free.`,
+    message: `[Break-Even #${ticket}] Stop Loss moved to ${cur}${updatedPos.sl.toFixed(2)} (Entry Defense). Trade is now 100% risk-free.`,
   };
 
   const nextLogs = [logMessage, ...state.auto_bot.logs].slice(0, 50);
@@ -667,10 +671,12 @@ export function tickDemoPositions(
       continue;
     }
 
-    // 3. Auto Break-Even Check: If in profit by >= +$15.00 and BE not yet triggered
+    // 3. Auto Break-Even Check: If in profit by >= +₹500.00 and BE not yet triggered
     let updatedPos = { ...pos, price_current: currentPrice, profit };
-    if (!pos.be_triggered && profit >= 15.0) {
-      const newSL = pos.type === "BUY" ? pos.price_open + 0.2 : pos.price_open - 0.2;
+    const curSym = pos.currency || stateCopy.currency || "₹";
+    const beProfitThreshold = pos.currency === "$" ? 15.0 : 500.0;
+    if (!pos.be_triggered && profit >= beProfitThreshold) {
+      const newSL = pos.type === "BUY" ? pos.price_open + 0.5 : pos.price_open - 0.5;
       updatedPos.sl = Math.round(newSL * 100) / 100;
       updatedPos.be_triggered = true;
 
@@ -678,7 +684,7 @@ export function tickDemoPositions(
         id: `auto-be-${Date.now()}-${pos.ticket}`,
         timestamp: Date.now(),
         type: "success",
-        message: `🛡️ [Auto Break-Even] Position #${pos.ticket} hit +$15.00 profit! SL moved to $${updatedPos.sl.toFixed(2)} (Trade Risk-Free).`,
+        message: `🛡️ [Auto Break-Even] Position #${pos.ticket} hit +${curSym}${beProfitThreshold.toFixed(0)} profit! SL moved to ${curSym}${updatedPos.sl.toFixed(2)} (Trade Risk-Free).`,
       };
       stateCopy.auto_bot = {
         ...stateCopy.auto_bot,
@@ -882,107 +888,6 @@ export function evaluateAutoBot(
     }
   }
 
-  // 2. If no PAVP signal or on Global FX symbol, evaluate institutional alerts
-  if (!Array.isArray(alerts) || alerts.length === 0 || isIndianOrMCX) {
-    return state;
-  }
-
-  // Strictly enforce Real Market Hours if configured
-  if (state.auto_bot.market_mode === "STRICT_REAL") {
-    const marketCheck = isForexMarketOpen();
-    if (!marketCheck.isOpen) {
-      return state;
-    }
-  }
-
-  let targetAlert: InstitutionalAlert | null = null;
-  let targetQuote: Quote | null = null;
-
-  for (const a of alerts) {
-    if (!a || !a.symbol) continue;
-    const isAMD = a.patternType === "AMD_ACCUMULATION_DISTRIBUTION" && typeof a.amdPhase === "string" && a.amdPhase.includes("Distribution");
-    const is4HBreakout = a.patternType === "4H_BREAKOUT_RETEST" && a.status === "CONFIRMED";
-    const isFVG = a.patternType === "FVG_MITIGATION" && a.status === "CONFIRMED";
-    const isOB = (a.patternType as string) === "ORDER_BLOCK_MITIGATION" && a.status === "CONFIRMED";
-    const isSB = a.patternType === "ICT_SILVER_BULLET" && a.status === "CONFIRMED";
-    if (!isAMD && !is4HBreakout && !isFVG && !isOB && !isSB) continue;
-
-    const alreadyOpenOnSymbol = openPositions.some((p) => p.symbol === a.symbol);
-    if (alreadyOpenOnSymbol) continue;
-
-    const resolvedQuote = allQuotes?.[a.symbol] || (quote?.symbol === a.symbol ? quote : null) || INITIAL_QUOTES[a.symbol];
-    if (!resolvedQuote || typeof resolvedQuote.bid !== "number" || typeof resolvedQuote.ask !== "number") {
-      continue;
-    }
-
-    const recentlyTradedSymbol = openPositions.some(
-      (p) => p.symbol === a.symbol && typeof p.time === "number" && Date.now() - p.time < 60000
-    );
-    if (recentlyTradedSymbol) continue;
-
-    targetAlert = a;
-    targetQuote = resolvedQuote;
-    break;
-  }
-
-  if (!targetAlert || !targetQuote) {
-    return state;
-  }
-
-  const action: "BUY" | "SELL" = (targetAlert.direction || "BUY").includes("BUY") ? "BUY" : "SELL";
-  const openPrice = action === "BUY" ? (targetQuote.ask || targetQuote.bid) : (targetQuote.bid || targetQuote.ask);
-
-  const sl =
-    typeof targetAlert.stopLoss === "number" && !isNaN(targetAlert.stopLoss)
-      ? targetAlert.stopLoss
-      : action === "BUY"
-      ? openPrice - 15.0
-      : openPrice + 15.0;
-
-  const tp =
-    typeof targetAlert.takeProfit1 === "number" && !isNaN(targetAlert.takeProfit1)
-      ? targetAlert.takeProfit1
-      : action === "BUY"
-      ? openPrice + 30.0
-      : openPrice - 30.0;
-
-  const safeLot = 0.02;
-  const patternLabel =
-    targetAlert.patternType === "4H_BREAKOUT_RETEST"
-      ? "4H Breakout & Retest"
-      : targetAlert.patternType === "FVG_MITIGATION"
-      ? "4H Fair Value Gap (FVG) Mitigation"
-      : targetAlert.patternType === "AMD_ACCUMULATION_DISTRIBUTION"
-      ? "ICT PO3 Judas Distribution Sweep"
-      : targetAlert.patternType === "ICT_SILVER_BULLET"
-      ? "ICT Silver Bullet Kill Zone Imbalance"
-      : "Institutional Order Block Mitigation";
-
-  const botLog: AutoBotLog = {
-    id: `bot-scan-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
-    timestamp: Date.now(),
-    type: "info",
-    message: `⚡ [Auto-Bot Trigger] Confirmed ${patternLabel} on ${targetAlert.symbol} detected! Executing standard 0.02 lots (1:1000 leverage).`,
-  };
-
-  const currentLogs = Array.isArray(state.auto_bot?.logs) ? state.auto_bot.logs : [];
-  const stateWithLog: DemoAccountState = {
-    ...state,
-    auto_bot: {
-      ...state.auto_bot,
-      logs: [botLog, ...currentLogs].slice(0, 50),
-    },
-  };
-
-  const tradeRes = executeDemoTrade(stateWithLog, {
-    symbol: targetAlert.symbol,
-    type: action,
-    volume: safeLot,
-    quote: targetQuote,
-    sl,
-    tp,
-    comment: `PO3_Bot_${targetAlert.symbol}`,
-  });
-
-  return tradeRes.state;
+  // Return current state if no new PAVP Volume Profile signal triggered
+  return state;
 }

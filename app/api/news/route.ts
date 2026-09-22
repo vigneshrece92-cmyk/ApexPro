@@ -2,14 +2,19 @@ import { NextResponse } from "next/server";
 import { INITIAL_NEWS } from "@/lib/defaultData";
 import { NewsItem, AssetSymbol } from "@/lib/types";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 export async function GET() {
   try {
-    const rssUrl = "https://news.google.com/rss/search?q=gold+price+XAUUSD+forex+fed+dollar&hl=en-US&gl=US&ceid=US:en";
+    const rssUrl =
+      "https://news.google.com/rss/search?q=Nifty+BankNifty+Sensex+MCX+Crude+oil+Natural+Gas+India+share+market&hl=en-IN&gl=IN&ceid=IN:en";
     const res = await fetch(rssUrl, {
       next: { revalidate: 180 }, // cache 3 minutes
       headers: {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
       },
+      signal: AbortSignal.timeout(4000),
     });
 
     if (res.ok) {
@@ -27,8 +32,7 @@ export async function GET() {
 
         if (titleMatch) {
           let fullTitle = titleMatch[1].replace(/<!\[CDATA\[(.*?)\]\]>/g, "$1").trim();
-          // Extract source if title is like "Headline - Source Name"
-          let source = "Financial News";
+          let source = "Dalal Street Wire";
           const dashIdx = fullTitle.lastIndexOf(" - ");
           if (dashIdx !== -1) {
             source = fullTitle.substring(dashIdx + 3).trim();
@@ -38,7 +42,7 @@ export async function GET() {
           const link = linkMatch ? linkMatch[1] : undefined;
           const pubDateStr = pubDateMatch ? pubDateMatch[1] : new Date().toISOString();
           const pubDate = new Date(pubDateStr);
-          
+
           const diffMinutes = Math.max(1, Math.floor((Date.now() - pubDate.getTime()) / 60000));
           const timeAgo =
             diffMinutes < 60
@@ -48,21 +52,57 @@ export async function GET() {
           // Infer Sentiment
           const lower = fullTitle.toLowerCase();
           let sentiment: "bullish" | "bearish" | "neutral" = "neutral";
-          if (lower.includes("rally") || lower.includes("jump") || lower.includes("surge") || lower.includes("bull") || lower.includes("rise") || lower.includes("gain") || lower.includes("high") || lower.includes("rebound")) {
+          if (
+            lower.includes("rally") ||
+            lower.includes("jump") ||
+            lower.includes("surge") ||
+            lower.includes("bull") ||
+            lower.includes("rise") ||
+            lower.includes("gain") ||
+            lower.includes("high") ||
+            lower.includes("rebound") ||
+            lower.includes("record")
+          ) {
             sentiment = "bullish";
-          } else if (lower.includes("fall") || lower.includes("drop") || lower.includes("slip") || lower.includes("bear") || lower.includes("tumble") || lower.includes("plunge") || lower.includes("lower")) {
+          } else if (
+            lower.includes("fall") ||
+            lower.includes("drop") ||
+            lower.includes("slip") ||
+            lower.includes("bear") ||
+            lower.includes("tumble") ||
+            lower.includes("plunge") ||
+            lower.includes("lower") ||
+            lower.includes("crash")
+          ) {
             sentiment = "bearish";
           }
 
-          // Affected Assets
+          // Affected Indian & MCX Assets
           const affected: AssetSymbol[] = [];
-          if (lower.includes("gold") || lower.includes("xau")) affected.push("XAUUSD");
-          if (lower.includes("silver") || lower.includes("xag")) affected.push("XAGUSD");
-          if (lower.includes("dollar") || lower.includes("fed") || lower.includes("rate") || lower.includes("dxy")) affected.push("DXY");
-          if (lower.includes("euro") || lower.includes("ecb")) affected.push("EURUSD");
-          if (lower.includes("yen") || lower.includes("boj") || lower.includes("jpy")) affected.push("USDJPY");
-          if (lower.includes("pound") || lower.includes("boe") || lower.includes("gbp")) affected.push("GBPUSD");
-          if (affected.length === 0) affected.push("XAUUSD", "DXY");
+          if (lower.includes("bank nifty") || lower.includes("banknifty") || lower.includes("banking")) {
+            affected.push("BANKNIFTY");
+          }
+          if (lower.includes("nifty") || lower.includes("nse")) {
+            if (!affected.includes("NIFTY")) affected.push("NIFTY");
+          }
+          if (lower.includes("crude") || lower.includes("oil") || lower.includes("brent") || lower.includes("opec")) {
+            affected.push("CRUDEOIL");
+          }
+          if (lower.includes("gas") || lower.includes("lng") || lower.includes("cng")) {
+            affected.push("NATURALGAS");
+          }
+          if (lower.includes("sensex") || lower.includes("bse")) {
+            affected.push("SENSEX");
+          }
+          if (lower.includes("vix") || lower.includes("volatility")) {
+            affected.push("INDIAVIX");
+          }
+          if (lower.includes("rupee") || lower.includes("rbi") || lower.includes("usdinr")) {
+            affected.push("USDINR");
+          }
+          if (affected.length === 0) {
+            affected.push("NIFTY", "BANKNIFTY");
+          }
 
           items.push({
             id: `real-news-${count}`,
@@ -81,14 +121,14 @@ export async function GET() {
       if (items.length > 0) {
         return NextResponse.json({
           success: true,
-          source: "google-news-live",
+          source: "indian-financial-news-live",
           news: items,
           timestamp: Date.now(),
         });
       }
     }
   } catch (err) {
-    console.warn("Failed to fetch live RSS news, using fallback:", err);
+    console.warn("Failed to fetch live Indian news, using default Indian feed:", err);
   }
 
   return NextResponse.json({

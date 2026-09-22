@@ -54,7 +54,7 @@ export default function TerminalDashboard() {
   const [alerts, setAlerts] = useState<InstitutionalAlert[]>(() => getInitialInstitutionalAlerts());
   const [isAlertsHubOpen, setIsAlertsHubOpen] = useState(false);
 
-  // Internal Institutional Demo Broker State (₹1,00,000 / $3,000 Balance - 100% Vercel Ready)
+  // Internal Institutional Demo Broker State (₹1,00,000 Balance - 100% Vercel Ready)
   const [demoAccount, setDemoAccount] = useState<DemoAccountState>(INITIAL_ACCOUNT_STATE);
   const notifiedTicketsRef = useRef<Set<number>>(new Set());
   const prevHistoryCountRef = useRef<number>(0);
@@ -141,7 +141,7 @@ export default function TerminalDashboard() {
           const data = await res.json();
           if (data.connected) {
             setMT5AccountData({
-              balance: data.balance || 3000.0,
+              balance: data.balance || 100000.0,
               connected: true,
             });
           }
@@ -476,14 +476,14 @@ export default function TerminalDashboard() {
       {/* Footer */}
       <footer className="border-t border-terminal-border/60 py-3 px-4 bg-[#070A0F] text-center text-[11px] text-terminal-muted flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
-          <span className="font-bold text-gray-300">ApexFX Pro Terminal</span>
+          <span className="font-bold text-gray-300">Apex Pro Terminal</span>
           <span>•</span>
-          <span>Real Live Feeds: Forex Factory, OANDA / TradingView, Binance PAXG Spot Gold</span>
+          <span>Real Live Feeds: NSE / BSE India, MCX Commodities</span>
           <span>•</span>
-          <span className="text-emerald-400 font-bold">Institutional Demo Broker ($3,000 Balance • Vercel Ready)</span>
+          <span className="text-emerald-400 font-bold">Virtual Options Broker (₹1,00,000 Balance • PAVP Engine)</span>
         </div>
         <div className="text-gray-500 font-mono text-[10px]">
-          100% Vercel-Ready • Educational Trading Terminal & Risk Intelligence
+          100% Dedicated to Indian F&O & MCX Commodities • Volume Profile Key Levels (VAH / VAL / POC)
         </div>
       </footer>
 
@@ -529,7 +529,7 @@ export default function TerminalDashboard() {
         onClose={() => setIsDemoPanelOpen(false)}
         account={demoAccount}
         onUpdateAccount={setDemoAccount}
-        liveQuote={allQuotes.XAUUSD || quote}
+        liveQuote={allQuotes[activeSymbol] || quote}
         prefillSetup={demoPrefillSetup}
       />
       <MT5TradingPanel

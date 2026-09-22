@@ -89,7 +89,7 @@ export const AIChartAnalyzer: React.FC<AIChartAnalyzerProps> = ({
     }
   };
 
-  const triggerAnalysis = async (base64Image: string, preferredAsset = "XAUUSD") => {
+  const triggerAnalysis = async (base64Image: string, preferredAsset = "NIFTY") => {
     setIsAnalyzing(true);
     setErrorMsg(null);
 
@@ -119,7 +119,7 @@ export const AIChartAnalyzer: React.FC<AIChartAnalyzerProps> = ({
   };
 
   // Sample Charts for quick testing
-  const loadSampleChart = (type: "gold" | "silver" | "eurusd") => {
+  const loadSampleChart = (type: "nifty" | "banknifty" | "crudeoil") => {
     // Generate an illustrative canvas chart screenshot on the fly
     const canvas = document.createElement("canvas");
     canvas.width = 720;
@@ -147,14 +147,19 @@ export const AIChartAnalyzer: React.FC<AIChartAnalyzerProps> = ({
       ctx.stroke();
     }
 
-    // Draw sample candlesticks
-    // Draw sample chart with authentic price levels
-    const assetName = type === "gold" ? "XAU/USD H1" : type === "silver" ? "XAG/USD H4" : "EUR/USD 15M";
-    const currentPriceText = type === "gold" ? "4,363.80" : type === "silver" ? "66.85" : "1.1480";
+    // Draw sample candlesticks with authentic Indian price levels
+    const assetName =
+      type === "nifty"
+        ? "NIFTY 50 5M (PAVP VAL Sweep)"
+        : type === "banknifty"
+        ? "BANK NIFTY 15M (VAH Reversal)"
+        : "CRUDE OIL MCX 5M (POC Retest)";
+    const currentPriceText =
+      type === "nifty" ? "₹23,320.00" : type === "banknifty" ? "₹51,240.00" : "₹7,660.00";
 
     ctx.fillStyle = "#FFFFFF";
     ctx.font = "bold 14px monospace";
-    ctx.fillText(`${assetName} • Live Broker Benchmark: ${currentPriceText}`, 20, 28);
+    ctx.fillText(`${assetName} • Live Benchmark: ${currentPriceText}`, 20, 28);
 
     // Render realistic sequence of candlesticks
     let prevClose = 230;
@@ -184,7 +189,10 @@ export const AIChartAnalyzer: React.FC<AIChartAnalyzerProps> = ({
 
     const sampleBase64 = canvas.toDataURL("image/png");
     setImageSrc(sampleBase64);
-    triggerAnalysis(sampleBase64, type === "gold" ? "XAUUSD" : type === "silver" ? "XAGUSD" : "EURUSD");
+    triggerAnalysis(
+      sampleBase64,
+      type === "nifty" ? "NIFTY" : type === "banknifty" ? "BANKNIFTY" : "CRUDEOIL"
+    );
   };
 
   return (
@@ -259,7 +267,7 @@ export const AIChartAnalyzer: React.FC<AIChartAnalyzerProps> = ({
               <span className="text-cyan-400 underline">Browse</span>
             </p>
             <p className="text-[11px] text-terminal-muted mb-4 max-w-sm">
-              Supports MT4, MT5, TradingView, or phone screenshots. You can also press{" "}
+              Supports TradingView, Zerodha Kite, Groww, Angel One, Upstox, Dhan, or phone screenshots. You can also press{" "}
               <kbd className="px-1.5 py-0.5 bg-terminal-card border border-terminal-border rounded text-[10px] text-gray-300 font-mono">
                 Ctrl + V
               </kbd>{" "}
@@ -273,31 +281,31 @@ export const AIChartAnalyzer: React.FC<AIChartAnalyzerProps> = ({
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation();
-                  loadSampleChart("gold");
+                  loadSampleChart("nifty");
                 }}
-                className="px-2 py-1 text-[11px] rounded bg-gold/10 text-gold hover:bg-gold/20 border border-gold/30 transition-all"
+                className="px-2 py-1 text-[11px] rounded bg-cyan-500/10 text-cyan-400 hover:bg-cyan-500/20 border border-cyan-500/30 transition-all font-semibold"
               >
-                XAU/USD Gold Breakout
+                NIFTY 50 PAVP Sweep
               </button>
               <button
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation();
-                  loadSampleChart("silver");
+                  loadSampleChart("banknifty");
                 }}
-                className="px-2 py-1 text-[11px] rounded bg-silver/10 text-gray-300 hover:bg-silver/20 border border-silver/30 transition-all"
+                className="px-2 py-1 text-[11px] rounded bg-blue-500/10 text-blue-300 hover:bg-blue-500/20 border border-blue-500/30 transition-all font-semibold"
               >
-                XAG/USD Silver Setup
+                BANK NIFTY VAH Reversal
               </button>
               <button
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation();
-                  loadSampleChart("eurusd");
+                  loadSampleChart("crudeoil");
                 }}
-                className="px-2 py-1 text-[11px] rounded bg-blue-500/10 text-cyan-400 hover:bg-blue-500/20 border border-blue-500/30 transition-all"
+                className="px-2 py-1 text-[11px] rounded bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 border border-amber-500/30 transition-all font-semibold"
               >
-                EUR/USD Liquidity
+                CRUDE OIL MCX POC Retest
               </button>
             </div>
           </div>

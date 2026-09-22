@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import React, { useState, useEffect, useCallback } from "react";
 import {
@@ -45,7 +45,7 @@ interface MT5AccountData {
   trade_expert?: boolean;
   open_profit?: number;
   open_positions?: MT5Position[];
-  xauusd?: {
+  nifty?: {
     bid: number;
     ask: number;
     spread: number;
@@ -84,9 +84,9 @@ export const MT5TradingPanel: React.FC<MT5TradingPanelProps> = ({
 
   // Order state
   const [action, setAction] = useState<"BUY" | "SELL">("BUY");
-  const [lotSize, setLotSize] = useState<number>(0.02);
-  const [stopLoss, setStopLoss] = useState<number>(4360.0);
-  const [takeProfit, setTakeProfit] = useState<number>(4400.0);
+  const [lotSize, setLotSize] = useState<number>(1);
+  const [stopLoss, setStopLoss] = useState<number>(23280.0);
+  const [takeProfit, setTakeProfit] = useState<number>(23450.0);
   const [riskPercent, setRiskPercent] = useState<number>(1.0);
 
   // Sync prefill setup if passed from 4H PO3 alert
@@ -105,13 +105,14 @@ export const MT5TradingPanel: React.FC<MT5TradingPanelProps> = ({
       if (res.ok) {
         const data = await res.json();
         setAccount(data);
-        if (data.xauusd && !prefillSetup) {
+        const tick = data.nifty;
+        if (tick && !prefillSetup) {
           if (action === "BUY") {
-            setStopLoss(round2(data.xauusd.ask - 15.0));
-            setTakeProfit(round2(data.xauusd.ask + 30.0));
+            setStopLoss(round2(tick.ask - 40.0));
+            setTakeProfit(round2(tick.ask + 80.0));
           } else {
-            setStopLoss(round2(data.xauusd.bid + 15.0));
-            setTakeProfit(round2(data.xauusd.bid - 30.0));
+            setStopLoss(round2(tick.bid + 40.0));
+            setTakeProfit(round2(tick.bid - 80.0));
           }
         }
       }
@@ -150,12 +151,12 @@ export const MT5TradingPanel: React.FC<MT5TradingPanelProps> = ({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           actionType: "trade",
-          symbol: "XAUUSD",
+          symbol: "NIFTY",
           action: chosenAction,
           lot: lotSize,
           sl: stopLoss,
           tp: takeProfit,
-          comment: "ApexFX_4H_PO3",
+          comment: "Apex_Nifty_F&O",
           risk_percent: riskPercent,
         }),
       });
@@ -164,7 +165,7 @@ export const MT5TradingPanel: React.FC<MT5TradingPanelProps> = ({
       if (data.success) {
         setStatusMessage({
           type: "success",
-          text: `Executed #${data.order}: ${chosenAction} ${lotSize} XAUUSD @ ${data.price}`,
+          text: `Executed #${data.order}: ${chosenAction} ${lotSize} NIFTY @ ${data.price}`,
         });
         fetchStatus();
       } else {
@@ -250,10 +251,10 @@ export const MT5TradingPanel: React.FC<MT5TradingPanelProps> = ({
 
   if (!isOpen) return null;
 
-  const currentBid = account?.xauusd?.bid || 4376.32;
-  const currentAsk = account?.xauusd?.ask || 4376.92;
+  const currentBid = account?.nifty?.bid || 23329.00;
+  const currentAsk = account?.nifty?.ask || 23330.50;
   const slDist = action === "BUY" ? Math.max(0.5, currentAsk - stopLoss) : Math.max(0.5, stopLoss - currentBid);
-  const potentialRisk = round2(slDist * lotSize * 100);
+  const potentialRisk = round2(slDist * lotSize * 25);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-md animate-in fade-in duration-200">
@@ -275,7 +276,7 @@ export const MT5TradingPanel: React.FC<MT5TradingPanelProps> = ({
                 </span>
               </div>
               <p className="text-[11px] text-terminal-muted">
-                Direct Local Terminal Execution • 100 oz Gold Contract • Safe $3,000 Risk Model
+                Direct Local Terminal Execution • Indian F&O & MCX Contract • Standard Risk Model
               </p>
             </div>
           </div>
@@ -333,7 +334,7 @@ export const MT5TradingPanel: React.FC<MT5TradingPanelProps> = ({
           </div>
 
           <div className="p-2 rounded bg-terminal-bg border border-terminal-border col-span-2 sm:col-span-1">
-            <span className="text-[10px] text-terminal-muted uppercase block">XAUUSD Live Quote</span>
+            <span className="text-[10px] text-terminal-muted uppercase block">NIFTY Live Quote</span>
             <div className="flex items-center gap-1.5 text-xs font-bold mt-0.5">
               <span className="text-bear">{currentBid}</span>
               <span className="text-terminal-muted">/</span>
@@ -385,8 +386,8 @@ export const MT5TradingPanel: React.FC<MT5TradingPanelProps> = ({
                 </span>
               </div>
               <p className="text-[11px] text-terminal-muted max-w-xl">
-                Continuously evaluates 4H XAUUSD Judas Sweeps & Retests directly on your MT5 broker rates.
-                Auto-executes with strict 1% risk ($30 max loss) and trails Stop Loss to Break-Even at +$25 profit.
+                Continuously evaluates Volume Profile VAH/VAL/POC levels directly on your broker rates.
+                Auto-executes with strict risk management and trails Stop Loss to Break-Even at target.
               </p>
             </div>
 
@@ -420,7 +421,7 @@ export const MT5TradingPanel: React.FC<MT5TradingPanelProps> = ({
               <div className="flex items-center gap-2">
                 <Terminal className="w-4 h-4 text-cyan-400" />
                 <h4 className="text-xs font-bold uppercase tracking-wider text-white">
-                  1-Click Order Execution Workbench (XAUUSD)
+                  1-Click Order Execution Workbench (NIFTY)
                 </h4>
               </div>
 
@@ -499,20 +500,12 @@ export const MT5TradingPanel: React.FC<MT5TradingPanelProps> = ({
                   step="0.1"
                   value={takeProfit}
                   onChange={(e) => setTakeProfit(parseFloat(e.target.value) || 0)}
-                  className="w-full px-2.5 py-1.5 rounded bg-terminal-bg border border-bull/40 text-bull font-bold focus:outline-none"
+                  className="w-full bg-[#05080E] border border-terminal-border rounded px-3 py-1.5 text-white font-mono text-xs focus:border-accent outline-none"
                 />
-              </div>
-
-              {/* Risk Summary */}
-              <div className="p-2 rounded bg-terminal-bg border border-terminal-border flex flex-col justify-center">
-                <span className="text-[9px] text-terminal-muted uppercase block">Projected Risk</span>
-                <span className="text-xs font-bold text-yellow-400">
-                  ${potentialRisk} ({((potentialRisk / 3000) * 100).toFixed(1)}% of $3k)
-                </span>
               </div>
             </div>
 
-            {/* Big 1-Click Action Buttons */}
+            {/* Execution Buttons */}
             <div className="grid grid-cols-2 gap-3 pt-1">
               <button
                 onClick={() => handleExecuteTrade("BUY")}
@@ -521,7 +514,7 @@ export const MT5TradingPanel: React.FC<MT5TradingPanelProps> = ({
               >
                 <TrendingUp className="w-4 h-4" />
                 <span>
-                  {executing ? "Sending Order..." : `⚡ BUY ${lotSize} XAUUSD @ ${currentAsk}`}
+                  {executing ? "Sending Order..." : `⚡ BUY ${lotSize} NIFTY @ ${currentAsk}`}
                 </span>
               </button>
 
@@ -532,7 +525,7 @@ export const MT5TradingPanel: React.FC<MT5TradingPanelProps> = ({
               >
                 <TrendingDown className="w-4 h-4" />
                 <span>
-                  {executing ? "Sending Order..." : `⚡ SELL ${lotSize} XAUUSD @ ${currentBid}`}
+                  {executing ? "Sending Order..." : `⚡ SELL ${lotSize} NIFTY @ ${currentBid}`}
                 </span>
               </button>
             </div>

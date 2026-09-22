@@ -7,127 +7,34 @@ if (typeof process !== "undefined" && process.env) {
   process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
 }
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
-  const symbol = (searchParams.get("symbol") || "XAUUSD") as AssetSymbol;
-  const timeframe = (searchParams.get("timeframe") || "1h") as TimeFrame;
+  const symbol = (searchParams.get("symbol") || "NIFTY") as AssetSymbol;
+  const timeframe = (searchParams.get("timeframe") || "5m") as TimeFrame;
   const count = parseInt(searchParams.get("count") || "100", 10);
 
   const updatedQuotes: Record<AssetSymbol, Quote> = { ...INITIAL_QUOTES };
   let activeCandles: Candle[] = [];
 
-  // Yahoo symbol mapping
-  const yahooSymbols: Record<string, string> = {
+  // Dedicated Indian Options & MCX Commodities Yahoo Symbol Mapping
+  const yahooSymbols: Partial<Record<AssetSymbol, string>> = {
     NIFTY: "^NSEI",
     BANKNIFTY: "^NSEBANK",
     SENSEX: "^BSESN",
+    FINNIFTY: "NIFTY_FIN_SERVICE.NS",
     CRUDEOIL: "CL=F",
     NATURALGAS: "NG=F",
-    FINNIFTY: "NIFTY_FIN_SERVICE.NS",
-    XAGUSD: "SI=F",
-    EURUSD: "EURUSD=X",
-    GBPUSD: "GBPUSD=X",
-    USDJPY: "JPY=X",
-    DXY: "DX-Y.NYB",
-    US10Y: "^TNX",
+    INDIAVIX: "^INDIAVIX",
+    USDINR: "INR=X",
   };
 
-  // 1. Fetch Real Gold Spot (Binance PAXG 1:1 Physical Gold)
+  const yahooKeys = Object.keys(yahooSymbols) as AssetSymbol[];
+
   try {
-    const klineInterval =
-      timeframe === "1m"
-        ? "1m"
-        : timeframe === "5m"
-        ? "5m"
-        : timeframe === "15m"
-        ? "15m"
-        : timeframe === "1h"
-        ? "1h"
-        : timeframe === "4h"
-        ? "4h"
-        : "1d";
-
-    const [spotGoldRes, tickerRes, klinesRes] = await Promise.all([
-      fetch("https://api.gold-api.com/price/XAU", {
-        headers: { "User-Agent": "Mozilla/5.0" },
-        next: { revalidate: 10 },
-        signal: AbortSignal.timeout(3000),
-      })
-        .then((r) => r.json())
-        .catch(() => null),
-      fetch("https://data-api.binance.vision/api/v3/ticker/24hr?symbol=PAXGUSDT", {
-        next: { revalidate: 10 },
-        signal: AbortSignal.timeout(3000),
-      })
-        .then((r) => r.json())
-        .catch(() => null),
-      symbol === "XAUUSD"
-        ? fetch(
-            `https://data-api.binance.vision/api/v3/klines?symbol=PAXGUSDT&interval=${klineInterval}&limit=${count}`,
-            { next: { revalidate: 15 }, signal: AbortSignal.timeout(3500) }
-          )
-            .then((r) => r.json())
-            .catch(() => null)
-        : Promise.resolve(null),
-    ]);
-
-    let spotPrice = spotGoldRes?.price ? parseFloat(spotGoldRes.price) : 0;
-    if (!spotPrice && tickerRes?.lastPrice) {
-      spotPrice = parseFloat(tickerRes.lastPrice) + 8.20;
-    }
-    if (!spotPrice) {
-      spotPrice = INITIAL_QUOTES.XAUUSD.bid;
-    }
-    const paxgLast = tickerRes ? parseFloat(tickerRes.lastPrice || tickerRes.bidPrice) : spotPrice;
-    const offset = spotPrice - paxgLast; // Calibrate crypto delta to institutional spot gold
-
-    const bid = +spotPrice.toFixed(2);
-    const ask = +(spotPrice + 0.38).toFixed(2);
-    const high24h = +(
-      Math.max(INITIAL_QUOTES.XAUUSD.high24h, tickerRes ? parseFloat(tickerRes.highPrice) + offset : spotPrice + 12)
-    ).toFixed(2);
-    const low24h = +(
-      Math.min(INITIAL_QUOTES.XAUUSD.low24h, tickerRes ? parseFloat(tickerRes.lowPrice) + offset : spotPrice - 18)
-    ).toFixed(2);
-    const change24h = tickerRes ? +parseFloat(tickerRes.priceChangePercent).toFixed(2) : INITIAL_QUOTES.XAUUSD.change24h;
-
-    updatedQuotes.XAUUSD = {
-      symbol: "XAUUSD",
-      name: "Gold / US Dollar",
-      category: "Commodity",
-      bid,
-      ask,
-      spread: 3.8,
-      change24h,
-      high24h,
-      low24h,
-      pipPrecision: 2,
-      pipMultiplier: 10,
-      lastUpdate: Date.now(),
-    };
-
-    if (symbol === "XAUUSD" && klinesRes && Array.isArray(klinesRes)) {
-      activeCandles = klinesRes.map((k: any) => ({
-        time: Math.floor(k[0] / 1000),
-        open: +(parseFloat(k[1]) + offset).toFixed(2),
-        high: +(parseFloat(k[2]) + offset).toFixed(2),
-        low: +(parseFloat(k[3]) + offset).toFixed(2),
-        close: +(parseFloat(k[4]) + offset).toFixed(2),
-        volume: +parseFloat(k[5]).toFixed(2),
-      }));
-
-      if (activeCandles.length > 0) {
-        activeCandles[activeCandles.length - 1].close = bid;
-      }
-    }
-  } catch (e) {
-    console.warn("Spot Gold fetch error:", e);
-  }
-
-  // 2. Fetch Real Quotes for FX, Silver, DXY, and US10Y from Yahoo Finance
-  const yahooKeys = Object.keys(yahooSymbols);
-  try {
-    let yInterval = "1h";
+    let yInterval = "5m";
     let yRange = "5d";
     if (timeframe === "1m") {
       yInterval = "1m";
@@ -152,6 +59,8 @@ export async function GET(req: NextRequest) {
     await Promise.all(
       yahooKeys.map(async (key) => {
         const ySym = yahooSymbols[key];
+        if (!ySym) return;
+
         const isTarget = symbol === key;
         const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(
           ySym
@@ -159,8 +68,9 @@ export async function GET(req: NextRequest) {
 
         try {
           const res = await fetch(url, {
-            headers: { "User-Agent": "Mozilla/5.0" },
-            next: { revalidate: isTarget ? 15 : 60 },
+            headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" },
+            next: { revalidate: isTarget ? 10 : 30 },
+            signal: AbortSignal.timeout(4000),
           });
 
           if (res.ok) {
@@ -169,10 +79,10 @@ export async function GET(req: NextRequest) {
             if (!res0) return;
 
             const meta = res0.meta;
-            let regularPrice = meta?.regularMarketPrice;
+            const regularPrice = meta?.regularMarketPrice;
             if (regularPrice == null) return;
 
-            // MCX conversion: NYMEX CL=F / NG=F converted to MCX INR per barrel / mmBtu
+            // MCX conversion: NYMEX CL=F / NG=F converted to MCX INR
             const isCrude = key === "CRUDEOIL";
             const isNatGas = key === "NATURALGAS";
             const mcxMultiplier = isCrude || isNatGas ? 83.8 : 1.0;
@@ -180,27 +90,22 @@ export async function GET(req: NextRequest) {
             const effectivePrice = regularPrice * mcxMultiplier;
             const prevClose = (meta?.previousClose || meta?.chartPreviousClose || regularPrice) * mcxMultiplier;
             const changePercent = prevClose ? +(((effectivePrice - prevClose) / prevClose) * 100).toFixed(2) : 0;
-            
-            const precision =
-              key === "EURUSD" || key === "GBPUSD"
-                ? 5
-                : key === "USDJPY" || key === "XAGUSD" || key === "US10Y"
-                ? 3
-                : 2;
-            const multiplier = precision === 5 ? 10000 : 100;
+
+            const precision = key === "NATURALGAS" || key === "USDINR" || key === "INDIAVIX" ? 2 : 2;
+            const multiplier = 100;
 
             const high = (meta?.regularMarketDayHigh || meta?.highPrice || regularPrice) * mcxMultiplier;
             const low = (meta?.regularMarketDayLow || meta?.lowPrice || regularPrice) * mcxMultiplier;
 
-            const baseQuote = INITIAL_QUOTES[key as AssetSymbol];
+            const baseQuote = INITIAL_QUOTES[key];
 
-            updatedQuotes[key as AssetSymbol] = {
-              symbol: key as AssetSymbol,
+            updatedQuotes[key] = {
+              symbol: key,
               name: baseQuote?.name || key,
-              category: baseQuote?.category || "Forex",
+              category: baseQuote?.category || "Indian Index",
               bid: +effectivePrice.toFixed(precision),
-              ask: +(effectivePrice + (key.includes("USD") ? 0.0001 : 1.5)).toFixed(precision),
-              spread: +(1.5).toFixed(1),
+              ask: +(effectivePrice + (key === "NATURALGAS" ? 0.2 : key === "CRUDEOIL" ? 2.0 : 1.5)).toFixed(precision),
+              spread: +(key === "NATURALGAS" ? 0.2 : key === "CRUDEOIL" ? 2.0 : 1.5).toFixed(1),
               change24h: changePercent,
               high24h: +high.toFixed(precision),
               low24h: +low.toFixed(precision),
@@ -208,11 +113,11 @@ export async function GET(req: NextRequest) {
               pipMultiplier: multiplier,
               lotSize: baseQuote?.lotSize,
               strikeStep: baseQuote?.strikeStep,
-              currency: baseQuote?.currency,
+              currency: baseQuote?.currency || "₹",
               lastUpdate: Date.now(),
             };
 
-            // If this is the requested active symbol, parse its real candles!
+            // If this is the requested active symbol, parse its real candles
             if (isTarget) {
               const times = res0.timestamp || [];
               const quotes = res0.indicators?.quote?.[0] || {};
@@ -238,7 +143,6 @@ export async function GET(req: NextRequest) {
               }
 
               if (parsed.length > 0) {
-                // Ensure the last candle reflects the latest live price
                 parsed[parsed.length - 1].close = +effectivePrice.toFixed(precision);
                 activeCandles = parsed.slice(-count);
               }
@@ -253,9 +157,9 @@ export async function GET(req: NextRequest) {
     console.warn("Error fetching Yahoo finance data:", e);
   }
 
-  const activeQuote = updatedQuotes[symbol] || INITIAL_QUOTES[symbol] || updatedQuotes.XAUUSD;
+  const activeQuote = updatedQuotes[symbol] || INITIAL_QUOTES[symbol] || updatedQuotes.NIFTY;
 
-  // Fallback to realistic candles if no network data was returned
+  // Fallback to realistic candles if network data was unavailable or partial
   if (activeCandles.length === 0) {
     activeCandles = generateRealisticCandles(symbol, timeframe, count, activeQuote.bid);
   } else if (activeCandles.length > 0) {
@@ -268,7 +172,7 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({
     symbol,
     timeframe,
-    source: "live-institutional-feed",
+    source: "indian-nse-mcx-feed",
     quote: activeQuote,
     candles: activeCandles,
     allQuotes: updatedQuotes,

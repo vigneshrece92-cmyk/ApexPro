@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import React from "react";
 import { AssetSymbol, RetailSentimentItem, Quote } from "@/lib/types";
@@ -24,17 +24,17 @@ export const RetailSentimentRadar: React.FC<RetailSentimentRadarProps> = ({
           </div>
           <div>
             <h2 className="text-xs font-bold uppercase tracking-wider text-white">
-              Retail Sentiment & Contrarian Radar
+              Option Chain PCR & Retail Sentiment Radar
             </h2>
             <p className="text-[10px] text-terminal-muted">
-              Crowd positioning vs institutional smart money liquidity hunt
+              Options Put-Call Ratio (PCR) & retail crowd bias vs institutional smart money
             </p>
           </div>
         </div>
 
         <div className="flex items-center gap-1.5 text-[10px] font-mono text-purple-300 bg-purple-500/10 px-2 py-0.5 rounded border border-purple-500/30">
           <ShieldAlert className="w-3 h-3 text-purple-400" />
-          <span>SQUEEZE RADAR</span>
+          <span>PCR SQUEEZE RADAR</span>
         </div>
       </div>
 
@@ -51,7 +51,7 @@ export const RetailSentimentRadar: React.FC<RetailSentimentRadarProps> = ({
               {/* Top Row: Symbol, Percentages & Contrarian Alert */}
               <div className="flex items-center justify-between text-xs font-mono">
                 <div className="flex items-center gap-2">
-                  <span className={`font-bold ${item.symbol.includes("XAU") ? "text-gold" : "text-white"}`}>
+                  <span className="font-bold text-white">
                     {item.symbol}
                   </span>
                   <span className="text-[10px] text-terminal-muted hidden sm:inline">
@@ -96,9 +96,9 @@ export const RetailSentimentRadar: React.FC<RetailSentimentRadarProps> = ({
                 </div>
               </div>
 
-              {/* Bottom: Institutional COT Note */}
+              {/* Bottom: Institutional Flow Note */}
               <div className="flex items-center justify-between text-[10px] font-mono pt-1 border-t border-terminal-border/40">
-                <span className="text-terminal-muted">CFTC Institutional COT:</span>
+                <span className="text-terminal-muted">Institutional FII/DII Bias:</span>
                 <span className="text-cyan-300 font-bold">{item.cotInstitutionalBias}</span>
               </div>
             </div>
