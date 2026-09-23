@@ -89,7 +89,7 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
   const [chartMode, setChartMode] = useState<"tradingview" | "smart">("smart");
 
   // Indicator & SMC Overlays - Clean professional defaults (Pure PAVP by default)
-  const [showEMA, setShowEMA] = useState<boolean>(true);
+  const [showEMA, setShowEMA] = useState<boolean>(false);
   const [showSR, setShowSR] = useState<boolean>(false);
   const [showFib, setShowFib] = useState<boolean>(false);
   const [showPD, setShowPD] = useState<boolean>(false);
@@ -184,15 +184,15 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
     const anchorPriceY = pavp.pivot ? series.priceToCoordinate(pavp.pivot.price) : null;
 
     const maxVol = Math.max(...pavp.rows.map((r) => r.volume), 1);
-    const maxHistWidth = Math.min(240, Math.max(90, (latestX - anchorX) * 0.45));
+    const maxHistWidth = Math.min(260, Math.max(120, (latestX - anchorX) * 0.42));
 
     const rows = pavp.rows.map((r, i) => {
       const y = series.priceToCoordinate(r.price);
-      let height = 4;
+      let height = 5;
       if (i < pavp.rows.length - 1) {
         const nextY = series.priceToCoordinate(pavp.rows[i + 1].price);
         if (y !== null && nextY !== null) {
-          height = Math.max(2, Math.abs(y - nextY));
+          height = Math.max(3, Math.abs(y - nextY));
         }
       }
       const width = Math.max(4, Math.round((r.volume / maxVol) * maxHistWidth));
@@ -1351,12 +1351,13 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
                 className="absolute inset-0 w-full h-full pointer-events-none z-10 overflow-hidden"
                 style={{ width: "100%", height: "100%" }}
               >
-                {/* 1. Value Area Shaded Zone (Translucent Blue fill between VAH and VAL) */}
+                {/* 1. Value Area Shaded Zone (Translucent Blue fill between VAH and VAL) & Key Level Rays */}
                 {overlayCoords.vahY !== null &&
                   overlayCoords.valY !== null &&
                   overlayCoords.anchorX !== null &&
                   overlayCoords.latestX !== null && (
                     <g className="va-box">
+                      {/* Translucent Value Area Background */}
                       <rect
                         x={Math.max(0, overlayCoords.anchorX)}
                         y={Math.min(overlayCoords.vahY, overlayCoords.valY)}
@@ -1365,9 +1366,40 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
                         fill="rgba(37, 99, 235, 0.08)"
                         stroke="rgba(37, 99, 235, 0.25)"
                         strokeWidth="1"
-                        strokeDasharray="4 2"
+                      />
+                      {/* Top VAH Blue Line (Matching TradingView dgtrd #2962ff) */}
+                      <line
+                        x1={Math.max(0, overlayCoords.anchorX)}
+                        y1={overlayCoords.vahY}
+                        x2={overlayCoords.latestX || 500}
+                        y2={overlayCoords.vahY}
+                        stroke="#2563EB"
+                        strokeWidth={2}
+                      />
+                      {/* Bottom VAL Blue Line (Matching TradingView dgtrd #2962ff) */}
+                      <line
+                        x1={Math.max(0, overlayCoords.anchorX)}
+                        y1={overlayCoords.valY}
+                        x2={overlayCoords.latestX || 500}
+                        y2={overlayCoords.valY}
+                        stroke="#2563EB"
+                        strokeWidth={2}
                       />
                     </g>
+                  )}
+
+                {/* POC Solid Red Line (Highest Traded Node Ray) */}
+                {overlayCoords.pocY !== null &&
+                  overlayCoords.anchorX !== null &&
+                  overlayCoords.latestX !== null && (
+                    <line
+                      x1={Math.max(0, overlayCoords.anchorX)}
+                      y1={overlayCoords.pocY}
+                      x2={overlayCoords.latestX || 500}
+                      y2={overlayCoords.pocY}
+                      stroke="#EF4444"
+                      strokeWidth={2.5}
+                    />
                   )}
 
                 {/* 2. Anchored Horizontal Volume Profile Bars */}
@@ -1378,9 +1410,9 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
                   const barFill = row.isPOC
                     ? "#EF4444"
                     : row.isValueArea
-                    ? "#FBC02D"
-                    : "#64748B";
-                  const barOpacity = row.isPOC ? 0.95 : row.isValueArea ? 0.82 : 0.45;
+                    ? "#38BDF8"
+                    : "#475569";
+                  const barOpacity = row.isPOC ? 0.95 : row.isValueArea ? 0.80 : 0.35;
 
                   return (
                     <g key={idx} className="vp-bar">
@@ -1398,9 +1430,9 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
                           x={startX}
                           y={barY + row.height / 2 - 1}
                           width={Math.max(row.width, (overlayCoords.latestX || 500) - startX)}
-                          height={2}
+                          height={2.5}
                           fill="#EF4444"
-                          opacity={0.85}
+                          opacity={0.9}
                         />
                       )}
                     </g>
