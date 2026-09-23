@@ -662,11 +662,11 @@ export function tickDemoPositions(
     const currentPrice = pos.type === "BUY" ? quote.bid : quote.ask;
     const profit = calculatePositionProfit(pos, quote);
 
-    // 1. Check Take Profit Hit
+    // 1. Check Take Profit Hit (ensure TP is validly beyond entry price)
     let tpHit = false;
-    if (pos.type === "BUY" && pos.tp > 0 && currentPrice >= pos.tp) {
+    if (pos.type === "BUY" && pos.tp > 0 && pos.tp > pos.price_open && currentPrice >= pos.tp) {
       tpHit = true;
-    } else if (pos.type === "SELL" && pos.tp > 0 && currentPrice <= pos.tp) {
+    } else if (pos.type === "SELL" && pos.tp > 0 && pos.tp < pos.price_open && currentPrice <= pos.tp) {
       tpHit = true;
     }
 
@@ -677,10 +677,14 @@ export function tickDemoPositions(
 
     // 2. Check Stop Loss Hit
     let slHit = false;
-    if (pos.type === "BUY" && pos.sl > 0 && currentPrice <= pos.sl) {
-      slHit = true;
-    } else if (pos.type === "SELL" && pos.sl > 0 && currentPrice >= pos.sl) {
-      slHit = true;
+    if (pos.type === "BUY" && pos.sl > 0) {
+      if (pos.be_triggered ? currentPrice <= pos.sl : (pos.sl < pos.price_open && currentPrice <= pos.sl)) {
+        slHit = true;
+      }
+    } else if (pos.type === "SELL" && pos.sl > 0) {
+      if (pos.be_triggered ? currentPrice >= pos.sl : (pos.sl > pos.price_open && currentPrice >= pos.sl)) {
+        slHit = true;
+      }
     }
 
     if (slHit) {
@@ -850,76 +854,119 @@ export function evaluateAutoBot(
     }
   }
 
+  // Enforce symbol-level 5-minute (300,000 ms) cooldown across active positions and trade history
+  const historyList = Array.isArray(state.history) ? state.history : [];
+  const lastClosedTrade = historyList.find((h) => h.symbol === quote.symbol);
+  const timeSinceLastClose = lastClosedTrade && typeof lastClosedTrade.close_time === "number"
+    ? Date.now() - lastClosedTrade.close_time
+    : Infinity;
+
+  const existingPos = openPositions.find((p) => p.symbol === quote.symbol);
+  const timeSinceOpen = existingPos && typeof existingPos.time === "number"
+    ? Date.now() - existingPos.time
+    : Infinity;
+
+  // 5-minute (300,000ms) cooldown per symbol to prevent rapid re-entry and duplicate trade spam
+  const isSymbolCoolingDown = timeSinceLastClose < 300000 || timeSinceOpen < 300000;
+  if (existingPos || isSymbolCoolingDown) {
+    return state;
+  }
+
   if (activeSignals && activeSignals.length > 0) {
     const latestSignal = activeSignals[activeSignals.length - 1];
     const isCE = latestSignal.action === "BUY CE";
     const tradeType = isCE ? "BUY" : "SELL";
 
-    const existingPos = openPositions.find((p) => p.symbol === quote.symbol);
-    const isSameDirection = existingPos && existingPos.type === tradeType;
+    // Validate signal freshness: must be on current or previous candle, and within 20 minutes
+    const isFreshCandle = typeof latestSignal.candleIndex === "number"
+      ? (sessionCandles.length - 1 - latestSignal.candleIndex) <= 2
+      : true;
+    const isFreshTime = typeof latestSignal.time === "number"
+      ? (Date.now() - latestSignal.time <= 20 * 60 * 1000)
+      : true;
 
-    // If an opposite trade is open on this symbol, close it first (reversal)
-    let workingState = state;
-    if (existingPos && !isSameDirection) {
-      const closeRes = closeDemoPosition(workingState, existingPos.ticket, quote, "PAVP Reversal Exit");
-      workingState = closeRes.state;
+    if (!isFreshCandle && !isFreshTime) {
+      return state;
     }
 
-    const recentlyTraded = workingState.open_positions.some(
-      (p) => p.symbol === quote.symbol && typeof p.time === "number" && Date.now() - p.time < 30000
-    );
-
-    if (!isSameDirection && !recentlyTraded && latestSignal) {
-      const optContract = getRecommendedOptionContract(quote.symbol, latestSignal.action, quote.bid);
-      const optSpec = getOptionSpec(quote.symbol);
-      const currencySym = quote.currency || workingState.currency || "₹";
-
-      const botLog: AutoBotLog = {
-        id: `bot-pavp-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
-        timestamp: Date.now(),
-        type: "trade",
-        message: `⚡ [15M PAVP Auto-Trade] ${latestSignal.label} triggered on ${quote.symbol}! Auto-executing 1 Lot (${optSpec.lotSize} Qty) ${quote.symbol} ${optContract.strike} ${optContract.type} @ ${currencySym}${optContract.premiumAsk.toFixed(2)}. SL: ${currencySym}${latestSignal.sl}, TP1 (POC): ${currencySym}${latestSignal.tp1}.`,
-      };
-
-      const currentLogs = Array.isArray(workingState.auto_bot?.logs) ? workingState.auto_bot.logs : [];
-      const stateWithLog: DemoAccountState = {
-        ...workingState,
-        auto_bot: {
-          ...workingState.auto_bot,
-          logs: [botLog, ...currentLogs].slice(0, 50),
-        },
-      };
-
-      const tradeRes = executeDemoTrade(stateWithLog, {
-        symbol: quote.symbol,
-        type: tradeType,
-        volume: 1.0, // 1 lot standard
-        quote,
-        sl: latestSignal.sl,
-        tp: latestSignal.tp1,
-        comment: `15M PAVP: ${latestSignal.label}`,
-        optionContractName: `${quote.symbol} ${optContract.strike} ${optContract.type}`,
-        optionType: optContract.type,
-        optionStrike: optContract.strike,
-        optionEntryPremium: optContract.premiumAsk,
-        lotSizeMultiplier: optSpec.lotSize,
-        currency: currencySym,
-      });
-
-      return tradeRes.state;
+    // Validate that current market price has not already reached or exceeded TP/SL
+    const curPrice = quote.bid;
+    if (tradeType === "BUY") {
+      // For BUY CE: current price must be above SL and below TP1 with at least 20% room left
+      if (latestSignal.tp1 <= curPrice || latestSignal.sl >= curPrice) {
+        return state;
+      }
+      const totalRange = latestSignal.tp1 - latestSignal.sl;
+      const roomRemaining = latestSignal.tp1 - curPrice;
+      if (totalRange > 0 && roomRemaining < totalRange * 0.20) {
+        return state;
+      }
+    } else {
+      // For BUY PE: current price must be below SL and above TP1 with at least 20% room left
+      if (latestSignal.tp1 >= curPrice || latestSignal.sl <= curPrice) {
+        return state;
+      }
+      const totalRange = latestSignal.sl - latestSignal.tp1;
+      const roomRemaining = curPrice - latestSignal.tp1;
+      if (totalRange > 0 && roomRemaining < totalRange * 0.20) {
+        return state;
+      }
     }
+
+    const optContract = getRecommendedOptionContract(quote.symbol, latestSignal.action, quote.bid);
+    const optSpec = getOptionSpec(quote.symbol);
+    const currencySym = quote.currency || state.currency || "₹";
+
+    const botLog: AutoBotLog = {
+      id: `bot-pavp-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
+      timestamp: Date.now(),
+      type: "trade",
+      message: `⚡ [15M PAVP Auto-Trade] ${latestSignal.label} triggered on ${quote.symbol}! Auto-executing 1 Lot (${optSpec.lotSize} Qty) ${quote.symbol} ${optContract.strike} ${optContract.type} @ ${currencySym}${optContract.premiumAsk.toFixed(2)}. SL: ${currencySym}${latestSignal.sl}, TP1 (POC): ${currencySym}${latestSignal.tp1}.`,
+    };
+
+    const currentLogs = Array.isArray(state.auto_bot?.logs) ? state.auto_bot.logs : [];
+    const stateWithLog: DemoAccountState = {
+      ...state,
+      auto_bot: {
+        ...state.auto_bot,
+        logs: [botLog, ...currentLogs].slice(0, 50),
+      },
+    };
+
+    const tradeRes = executeDemoTrade(stateWithLog, {
+      symbol: quote.symbol,
+      type: tradeType,
+      volume: 1.0, // 1 lot standard
+      quote,
+      sl: latestSignal.sl,
+      tp: latestSignal.tp1,
+      comment: `15M PAVP: ${latestSignal.label}`,
+      optionContractName: `${quote.symbol} ${optContract.strike} ${optContract.type}`,
+      optionType: optContract.type,
+      optionStrike: optContract.strike,
+      optionEntryPremium: optContract.premiumAsk,
+      lotSizeMultiplier: optSpec.lotSize,
+      currency: currencySym,
+    });
+
+    return tradeRes.state;
   }
 
   // 2. Also check confirmed Institutional PAVP alerts for this asset
   if (alerts && alerts.length > 0) {
     const alert = alerts.find((a) => a.symbol === quote.symbol && a.status === "CONFIRMED");
-    const alreadyOpenOnSymbol = openPositions.some((p) => p.symbol === quote.symbol);
-    const recentlyTradedSymbol = openPositions.some(
-      (p) => p.symbol === quote.symbol && typeof p.time === "number" && Date.now() - p.time < 30000
-    );
 
-    if (alert && !alreadyOpenOnSymbol && !recentlyTradedSymbol) {
+    if (alert) {
       const isCE = alert.direction.includes("CE") || alert.direction.includes("BUY");
+      const tradeType = isCE ? "BUY" : "SELL";
+      const curPrice = quote.bid;
+
+      if (tradeType === "BUY") {
+        if (alert.takeProfit1 <= curPrice || alert.stopLoss >= curPrice) return state;
+      } else {
+        if (alert.takeProfit1 >= curPrice || alert.stopLoss <= curPrice) return state;
+      }
+
       const optContract = getRecommendedOptionContract(quote.symbol, isCE ? "BUY CE" : "BUY PE", quote.bid);
       const optSpec = getOptionSpec(quote.symbol);
       const currencySym = quote.currency || state.currency || "₹";
@@ -942,7 +989,7 @@ export function evaluateAutoBot(
 
       const tradeRes = executeDemoTrade(stateWithLog, {
         symbol: quote.symbol,
-        type: isCE ? "BUY" : "SELL",
+        type: tradeType,
         volume: 1.0,
         quote,
         sl: alert.stopLoss,

@@ -57,7 +57,7 @@ export default function TerminalDashboard() {
   // Internal Institutional Demo Broker State (₹1,00,000 Balance - 100% Vercel Ready)
   const [demoAccount, setDemoAccount] = useState<DemoAccountState>(INITIAL_ACCOUNT_STATE);
   const notifiedTicketsRef = useRef<Set<number>>(new Set());
-  const prevHistoryCountRef = useRef<number>(0);
+  const notifiedClosedTicketsRef = useRef<Set<number>>(new Set());
   const [isDemoPanelOpen, setIsDemoPanelOpen] = useState(false);
   const [demoPrefillSetup, setDemoPrefillSetup] = useState<{
     action: "BUY" | "SELL";
@@ -99,10 +99,14 @@ export default function TerminalDashboard() {
     setIsMounted(true);
     const loaded = loadDemoAccount();
     setDemoAccount(loaded);
-    prevHistoryCountRef.current = Array.isArray(loaded.history) ? loaded.history.length : 0;
     if (Array.isArray(loaded.open_positions)) {
       loaded.open_positions.forEach((p) => {
         if (p?.ticket) notifiedTicketsRef.current.add(p.ticket);
+      });
+    }
+    if (Array.isArray(loaded.history)) {
+      loaded.history.forEach((h) => {
+        if (h?.ticket) notifiedClosedTicketsRef.current.add(h.ticket);
       });
     }
     if (typeof window !== "undefined") {
@@ -182,21 +186,18 @@ export default function TerminalDashboard() {
 
     // Check for newly closed positions
     const historyList = Array.isArray(demoAccount.history) ? demoAccount.history : [];
-    if (historyList.length > prevHistoryCountRef.current) {
-      const newClosed = historyList.slice(0, historyList.length - prevHistoryCountRef.current);
-      for (const closed of newClosed) {
-        if (closed?.ticket) {
-          const isIndian = ["NIFTY", "BANKNIFTY", "CRUDEOIL", "NATURALGAS", "FINNIFTY", "SENSEX"].includes(closed.symbol);
-          const curSym = closed.currency || (isIndian ? "₹" : "$");
-          const profit = typeof closed.profit === "number" ? closed.profit : 0;
-          const closePrice = typeof closed.price_close === "number" ? closed.price_close.toFixed(2) : "0.00";
-          sendTelegramNotification(
-            `🎯 <b>Apex Terminal Position Exit</b>\n━━━━━━━━━━━━━━━━━━━━\n<b>Ticket:</b> #${closed.ticket} ${closed.optionContractName || closed.symbol}\n<b>Result:</b> ${profit >= 0 ? "🟢 Profit: +" : "🔴 Loss: "}${curSym}${Math.abs(profit).toFixed(2)}\n<b>Exit Reason:</b> ${closed.close_reason || "Market Exit"}\n<b>Close Price:</b> ${curSym}${closePrice}\n<i>Apex Terminal Virtual Broker</i>`
-          ).catch((err) => console.warn("Telegram broadcast error:", err));
-        }
+    for (const closed of historyList) {
+      if (closed?.ticket && !notifiedClosedTicketsRef.current.has(closed.ticket)) {
+        notifiedClosedTicketsRef.current.add(closed.ticket);
+        const isIndian = ["NIFTY", "BANKNIFTY", "CRUDEOIL", "NATURALGAS", "FINNIFTY", "SENSEX"].includes(closed.symbol);
+        const curSym = closed.currency || (isIndian ? "₹" : "$");
+        const profit = typeof closed.profit === "number" ? closed.profit : 0;
+        const closePrice = typeof closed.price_close === "number" ? closed.price_close.toFixed(2) : "0.00";
+        sendTelegramNotification(
+          `🎯 <b>Apex Terminal Position Exit</b>\n━━━━━━━━━━━━━━━━━━━━\n<b>Ticket:</b> #${closed.ticket} ${closed.optionContractName || closed.symbol}\n<b>Result:</b> ${profit >= 0 ? "🟢 Profit: +" : "🔴 Loss: "}${curSym}${Math.abs(profit).toFixed(2)}\n<b>Exit Reason:</b> ${closed.close_reason || "Market Exit"}\n<b>Close Price:</b> ${curSym}${closePrice}\n<i>Apex Terminal Virtual Broker</i>`
+        ).catch((err) => console.warn("Telegram broadcast error:", err));
       }
     }
-    prevHistoryCountRef.current = historyList.length;
   }, [demoAccount.open_positions, demoAccount.history, isMounted]);
 
   // 2. Pure state tick & auto-bot evaluation on live quotes and 5s heartbeat
