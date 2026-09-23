@@ -43,11 +43,11 @@ export default function TerminalDashboard() {
   // Client mount hydration guard
   const [isMounted, setIsMounted] = useState(false);
 
-  // Active State - Default to NIFTY 5m Indian Options & Commodities Terminal
-  const [activeSymbol, setActiveSymbol] = useState<AssetSymbol>("NIFTY");
-  const [timeframe, setTimeframe] = useState<TimeFrame>("5m");
-  const [candles, setCandles] = useState<Candle[]>(() => generateRealisticCandles("NIFTY", "5m", 120));
-  const [quote, setQuote] = useState<Quote>(INITIAL_QUOTES.NIFTY);
+  // Active State - Default to 15m Indian Options & Commodities Terminal
+  const [activeSymbol, setActiveSymbol] = useState<AssetSymbol>("CRUDEOIL");
+  const [timeframe, setTimeframe] = useState<TimeFrame>("15m");
+  const [candles, setCandles] = useState<Candle[]>(() => generateRealisticCandles("CRUDEOIL", "15m", 120, 8585.00));
+  const [quote, setQuote] = useState<Quote>(INITIAL_QUOTES.CRUDEOIL);
   const [allQuotes, setAllQuotes] = useState<Record<AssetSymbol, Quote>>(INITIAL_QUOTES);
 
   // Institutional Alerts State (4H Breakout & Retest + AMD Radar)
@@ -207,7 +207,7 @@ export default function TerminalDashboard() {
       setDemoAccount((prev) => {
         const ticked = tickDemoPositions(prev, quote);
         if (ticked?.auto_bot?.enabled) {
-          return evaluateAutoBot(ticked, quote, alerts, allQuotes, candles);
+          return evaluateAutoBot(ticked, quote, alerts, allQuotes, candles, undefined, timeframe);
         }
         return ticked;
       });

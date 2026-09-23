@@ -317,60 +317,79 @@ def modify_position(data):
         err_msg = res.comment if res else str(mt5.last_error())
         return {"success": False, "error": err_msg}
 
-# Background Autonomous Bot Loop (Analyzes live 4H PO3 & Breakout on XAUUSD)
+# Background Autonomous Bot Loop (Analyzes live 15M PAVP Volume Profile on MCX & Indian F&O)
 def auto_bot_worker():
-    log_bot("ApexFX 4H PO3 / Breakout Auto-Bot initialized")
+    log_bot("Apex Pro 15M PAVP Volume Profile Auto-Bot initialized")
+    symbols = ["CRUDEOIL", "NATURALGAS", "NIFTY", "BANKNIFTY"]
     while True:
         try:
             if auto_bot_state["enabled"]:
                 ok, _ = ensure_mt5()
                 if ok:
-                    # Check open positions count
-                    positions = mt5.positions_get(symbol="XAUUSD")
-                    open_count = len(positions) if positions else 0
+                    for sym in symbols:
+                        positions = mt5.positions_get(symbol=sym)
+                        open_count = len(positions) if positions else 0
 
-                    # 1. Manage open positions: Break-Even Rule
-                    if positions:
-                        for p in positions:
-                            tick = mt5.symbol_info_tick("XAUUSD")
-                            if not tick: continue
-                            # If profit is >= $15 and SL is still behind entry, move to Break-Even!
-                            if p.profit >= 15.0:
-                                if (p.type == mt5.ORDER_TYPE_BUY and p.sl < p.price_open) or \
-                                   (p.type == mt5.ORDER_TYPE_SELL and p.sl > p.price_open):
-                                    modify_position({"ticket": p.ticket, "break_even": True})
-                                    log_bot(f"Auto-Protected #{p.ticket} to Break-Even! (Profit: +${p.profit:.2f})")
+                        # 1. Manage open positions: Break-Even Rule
+                        if positions:
+                            for p in positions:
+                                tick = mt5.symbol_info_tick(sym)
+                                if not tick: continue
+                                # If profit buffer reached and SL is still behind entry, move to Break-Even!
+                                if p.profit >= 500.0:
+                                    if (p.type == mt5.ORDER_TYPE_BUY and p.sl < p.price_open) or \
+                                       (p.type == mt5.ORDER_TYPE_SELL and p.sl > p.price_open):
+                                        modify_position({"ticket": p.ticket, "break_even": True})
+                                        log_bot(f"Auto-Protected #{p.ticket} {sym} to Break-Even! (Profit: +₹{p.profit:.2f})")
 
-                    # 2. Check for entry if slots available
-                    if open_count < auto_bot_state["max_open_trades"]:
-                        # Fetch latest 4H rates from MT5
-                        rates = mt5.copy_rates_from_pos("XAUUSD", mt5.TIMEFRAME_H4, 0, 24)
-                        if rates is not None and len(rates) >= 20:
-                            # Evaluate ICT PO3 & 4H Breakout
-                            last_bar = rates[-1]
-                            prev_bar = rates[-2]
-                            accum_bars = rates[-10:-4]
-                            accum_high = max(r[2] for r in accum_bars)
-                            accum_low = min(r[3] for r in accum_bars)
+                        # 2. Check for 15M Volume Profile entry if slots available
+                        if open_count < 1:
+                            rates = mt5.copy_rates_from_pos(sym, mt5.TIMEFRAME_M15, 0, 50)
+                            if rates is not None and len(rates) >= 20:
+                                last_bar = rates[-1]
+                                prev_bar = rates[-2]
+                                tick = mt5.symbol_info_tick(sym)
+                                curr_price = tick.bid if tick else last_bar[4]
 
-                            tick = mt5.symbol_info_tick("XAUUSD")
-                            curr_price = tick.bid if tick else last_bar[4]
+                                highs = [r[2] for r in rates]
+                                lows = [r[3] for r in rates]
+                                p_high = max(highs)
+                                p_low = min(lows)
+                                p_range = p_high - p_low
+                                val = p_low + p_range * 0.22
+                                poc = p_low + p_range * 0.50
+                                vah = p_low + p_range * 0.78
+                                buffer = p_range * 0.05
 
-                            # PO3 Bullish Judas Swing Check
-                            # Swept below accum_low and snapped back above accum_low
-                            if prev_bar[3] < accum_low and last_bar[4] > accum_low:
-                                sl = round(prev_bar[3] - 5.0, 2)
-                                tp1 = round(accum_high, 2)
-                                execute_trade({
-                                    "symbol": "XAUUSD",
-                                    "action": "BUY",
-                                    "sl": sl,
-                                    "tp": tp1,
-                                    "comment": "ApexFX_4H_PO3_Auto",
-                                    "risk_percent": auto_bot_state["risk_percent"]
-                                })
-                                log_bot(f"AUTO-TRIGGER: Executed Bullish 4H PO3 BUY on XAUUSD @ {curr_price}")
-                                time.sleep(60) # prevent double-entry
+                                # 15M BUY CE @ VAL: Rebound off VAL
+                                if (prev_bar[3] <= val + buffer or last_bar[3] <= val + buffer) and last_bar[4] >= val:
+                                    sl = round(p_low - buffer, 2)
+                                    tp = round(poc, 2)
+                                    execute_trade({
+                                        "symbol": sym,
+                                        "action": "BUY",
+                                        "sl": sl,
+                                        "tp": tp,
+                                        "comment": f"15M_PAVP_VAL_BUY_{sym}",
+                                        "risk_percent": auto_bot_state["risk_percent"]
+                                    })
+                                    log_bot(f"AUTO-TRIGGER: Executed 15M PAVP BUY on {sym} @ {curr_price} (SL: {sl}, TP: {tp})")
+                                    time.sleep(30)
+
+                                # 15M SELL PE @ VAH: Rejection off VAH
+                                elif (prev_bar[2] >= vah - buffer or last_bar[2] >= vah - buffer) and last_bar[4] <= vah:
+                                    sl = round(p_high + buffer, 2)
+                                    tp = round(poc, 2)
+                                    execute_trade({
+                                        "symbol": sym,
+                                        "action": "SELL",
+                                        "sl": sl,
+                                        "tp": tp,
+                                        "comment": f"15M_PAVP_VAH_SELL_{sym}",
+                                        "risk_percent": auto_bot_state["risk_percent"]
+                                    })
+                                    log_bot(f"AUTO-TRIGGER: Executed 15M PAVP SELL on {sym} @ {curr_price} (SL: {sl}, TP: {tp})")
+                                    time.sleep(30)
         except Exception as e:
             print(f"Auto-bot loop error: {e}")
 

@@ -23,6 +23,7 @@ import {
   resetDemoAccount,
   saveDemoAccount,
   isIndianMarketOpen,
+  evaluateAutoBot,
 } from "@/lib/demoTradingEngine";
 import { getRecommendedOptionContract, getOptionSpec } from "@/lib/optionsEngine";
 import { sendTelegramNotification } from "@/lib/telegramBroadcaster";
@@ -239,7 +240,25 @@ export const InternalDemoTradingPanel: React.FC<InternalDemoTradingPanelProps> =
     onUpdateAccount(nextState);
     setStatusMessage({
       type: "success",
-      text: nextEnabled ? "PAVP Auto-Bot ACTIVATED! Scanning active market setups..." : "Auto-Bot paused.",
+      text: nextEnabled ? "15M PAVP Auto-Bot ACTIVATED! Scanning active market setups..." : "Auto-Bot paused.",
+    });
+  };
+
+  const handleExecute15MTradeNow = () => {
+    const nextState = evaluateAutoBot(
+      { ...account, auto_bot: { ...account.auto_bot, enabled: true } },
+      liveQuote,
+      [],
+      undefined,
+      undefined,
+      undefined,
+      "15m"
+    );
+    saveDemoAccount(nextState);
+    onUpdateAccount(nextState);
+    setStatusMessage({
+      type: "success",
+      text: `⚡ 15M PAVP Auto-Trade scan executed for ${activeSymbol}!`,
     });
   };
 
@@ -518,27 +537,38 @@ export const InternalDemoTradingPanel: React.FC<InternalDemoTradingPanelProps> =
                   ))}
                 </div>
 
-                {/* Auto-Bot Toggle Button */}
-                <button
-                  onClick={handleToggleAutoBot}
-                  className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-bold transition-all shadow-md ${
-                    account.auto_bot.enabled
-                      ? "bg-amber-600 hover:bg-amber-500 text-black shadow-amber-500/20"
-                      : "bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white shadow-emerald-500/20"
-                  }`}
-                >
-                  {account.auto_bot.enabled ? (
-                    <>
-                      <Pause className="w-3.5 h-3.5" />
-                      <span>Pause Bot</span>
-                    </>
-                  ) : (
-                    <>
-                      <Play className="w-3.5 h-3.5" />
-                      <span>Activate Bot</span>
-                    </>
-                  )}
-                </button>
+                {/* Auto-Bot Toggle & 1-Click 15M Execution Buttons */}
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleExecute15MTradeNow}
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold bg-gradient-to-r from-blue-600 via-indigo-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white shadow-md shadow-blue-500/20 transition-all border border-cyan-400/40"
+                    title="Scan current 15M Volume Profile setup and execute trade immediately"
+                  >
+                    <Zap className="w-3.5 h-3.5 text-yellow-300" />
+                    <span>Execute 15M Signal</span>
+                  </button>
+
+                  <button
+                    onClick={handleToggleAutoBot}
+                    className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-bold transition-all shadow-md ${
+                      account.auto_bot.enabled
+                        ? "bg-amber-600 hover:bg-amber-500 text-black shadow-amber-500/20"
+                        : "bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white shadow-emerald-500/20"
+                    }`}
+                  >
+                    {account.auto_bot.enabled ? (
+                      <>
+                        <Pause className="w-3.5 h-3.5" />
+                        <span>Pause Bot</span>
+                      </>
+                    ) : (
+                      <>
+                        <Play className="w-3.5 h-3.5" />
+                        <span>Activate Bot</span>
+                      </>
+                    )}
+                  </button>
+                </div>
               </div>
             </div>
 

@@ -1,5 +1,5 @@
-import { AssetSymbol, Quote, InstitutionalAlert, Candle, PAVPSignal, OptionType, PivotAnchoredVPResult } from "./types";
-import { INITIAL_QUOTES } from "./defaultData";
+import { AssetSymbol, Quote, InstitutionalAlert, Candle, PAVPSignal, OptionType, PivotAnchoredVPResult, TimeFrame } from "./types";
+import { INITIAL_QUOTES, generateRealisticCandles } from "./defaultData";
 import { getRecommendedOptionContract, getOptionSpec } from "./optionsEngine";
 import { detectPAVPSignals, calculatePivotAnchoredVolumeProfile } from "./technicals";
 
@@ -37,7 +37,7 @@ export interface ClosedTrade {
   return_percent: number;
   open_time: number;
   close_time: number;
-  close_reason: "Take Profit Hit" | "Stop Loss Hit" | "Manual Exit" | "Break-Even Exit";
+  close_reason: "Take Profit Hit" | "Stop Loss Hit" | "Manual Exit" | "Break-Even Exit" | "PAVP Reversal Exit";
   optionContractName?: string;
   currency?: "₹" | "$";
 }
@@ -765,48 +765,47 @@ export function evaluateAutoBot(
   alerts: InstitutionalAlert[],
   allQuotes?: Record<AssetSymbol, Quote>,
   candles?: Candle[],
-  pavpSignals?: PAVPSignal[]
+  pavpSignals?: PAVPSignal[],
+  timeframe: TimeFrame = "15m"
 ): DemoAccountState {
   if (!state.auto_bot || !state.auto_bot.enabled) {
     return state;
   }
 
-  // Limit max concurrent open positions to 2 to protect account capital
+  // Limit max concurrent open positions to 4 to allow active multi-asset options trading
   const openPositions = Array.isArray(state.open_positions) ? state.open_positions : [];
-  if (openPositions.length >= 2) {
+  if (openPositions.length >= 4) {
     return state;
   }
 
-  const isIndianOrMCX =
-    quote.symbol === "NIFTY" ||
-    quote.symbol === "BANKNIFTY" ||
-    quote.symbol === "CRUDEOIL" ||
-    quote.symbol === "NATURALGAS" ||
-    quote.symbol === "SENSEX" ||
-    quote.symbol === "FINNIFTY";
-
-  // 1. Check for Strict Volume Profile (PAVP) Entry
+  // 1. Check for Strict 15M Volume Profile (PAVP) Entry
   let activeSignals = pavpSignals;
   let pavpRes: PivotAnchoredVPResult | null = null;
-  if (!activeSignals && candles && candles.length >= 15) {
-    const liveCandles = [...candles];
+
+  // Use 15m candles (fallback to generateRealisticCandles if not provided or too short)
+  const sessionCandles = candles && candles.length >= 15
+    ? candles
+    : generateRealisticCandles(quote.symbol, "15m", 100, quote.bid);
+
+  if (!activeSignals) {
+    const liveCandles = [...sessionCandles];
     const lastBar = { ...liveCandles[liveCandles.length - 1] };
     lastBar.close = quote.bid;
     if (quote.bid > lastBar.high) lastBar.high = quote.bid;
     if (quote.bid < lastBar.low) lastBar.low = quote.bid;
     liveCandles[liveCandles.length - 1] = lastBar;
 
-    pavpRes = calculatePivotAnchoredVolumeProfile(liveCandles, 15, 28, 0.68, quote.pipPrecision || 2);
+    pavpRes = calculatePivotAnchoredVolumeProfile(liveCandles, 15, 25, 0.68, quote.pipPrecision || 2);
     activeSignals = detectPAVPSignals(liveCandles, pavpRes, quote.symbol, quote.pipPrecision || 2).signals;
   }
 
   // Live real-time proximity check if no recent historical signal found
-  if ((!activeSignals || activeSignals.length === 0) && pavpRes && pavpRes.poc > 0 && candles && candles.length >= 15) {
+  if ((!activeSignals || activeSignals.length === 0) && pavpRes && pavpRes.poc > 0) {
     const { val, vah, poc } = pavpRes;
     const vaRange = Math.abs(vah - val);
     const buffer = Math.max(0.15, vaRange * 0.05);
     const precision = quote.pipPrecision || 2;
-    const lastCandle = candles[candles.length - 1];
+    const lastCandle = sessionCandles[sessionCandles.length - 1];
 
     if (Math.abs(quote.bid - val) <= buffer * 1.5) {
       activeSignals = [{
@@ -814,7 +813,7 @@ export function evaluateAutoBot(
         label: `BUY CE @ VAL ${quote.bid.toFixed(precision)}`,
         action: "BUY CE",
         levelPrice: val,
-        candleIndex: candles.length - 1,
+        candleIndex: sessionCandles.length - 1,
         time: lastCandle.time,
         sl: +(val - buffer * 1.5).toFixed(precision),
         tp1: +poc.toFixed(precision),
@@ -824,10 +823,10 @@ export function evaluateAutoBot(
     } else if (Math.abs(quote.bid - vah) <= buffer * 1.5) {
       activeSignals = [{
         type: "BUY_PE_VAH",
-        label: `BUY PE @ VAH ${quote.bid.toFixed(precision)}`,
+        label: `SELL PE @ VAH ${quote.bid.toFixed(precision)}`,
         action: "BUY PE",
         levelPrice: vah,
-        candleIndex: candles.length - 1,
+        candleIndex: sessionCandles.length - 1,
         time: lastCandle.time,
         sl: +(vah + buffer * 1.5).toFixed(precision),
         tp1: +poc.toFixed(precision),
@@ -838,10 +837,10 @@ export function evaluateAutoBot(
       const isAbove = quote.bid >= poc;
       activeSignals = [{
         type: isAbove ? "BUY_CE_POC" : "BUY_PE_POC",
-        label: isAbove ? `BUY CE @ POC ${quote.bid.toFixed(precision)}` : `BUY PE @ POC ${quote.bid.toFixed(precision)}`,
+        label: isAbove ? `BUY CE @ POC ${quote.bid.toFixed(precision)}` : `SELL PE @ POC ${quote.bid.toFixed(precision)}`,
         action: isAbove ? "BUY CE" : "BUY PE",
         levelPrice: poc,
-        candleIndex: candles.length - 1,
+        candleIndex: sessionCandles.length - 1,
         time: lastCandle.time,
         sl: +(isAbove ? poc - buffer * 1.2 : poc + buffer * 1.2).toFixed(precision),
         tp1: +(isAbove ? vah : val).toFixed(precision),
@@ -853,46 +852,52 @@ export function evaluateAutoBot(
 
   if (activeSignals && activeSignals.length > 0) {
     const latestSignal = activeSignals[activeSignals.length - 1];
-    const alreadyOpenOnSymbol = openPositions.some((p) => p.symbol === quote.symbol);
+    const isCE = latestSignal.action === "BUY CE";
+    const tradeType = isCE ? "BUY" : "SELL";
 
-    const recentlyTradedSymbol = openPositions.some(
-      (p) => p.symbol === quote.symbol && typeof p.time === "number" && Date.now() - p.time < 60000
+    const existingPos = openPositions.find((p) => p.symbol === quote.symbol);
+    const isSameDirection = existingPos && existingPos.type === tradeType;
+
+    // If an opposite trade is open on this symbol, close it first (reversal)
+    let workingState = state;
+    if (existingPos && !isSameDirection) {
+      const closeRes = closeDemoPosition(workingState, existingPos.ticket, quote, "PAVP Reversal Exit");
+      workingState = closeRes.state;
+    }
+
+    const recentlyTraded = workingState.open_positions.some(
+      (p) => p.symbol === quote.symbol && typeof p.time === "number" && Date.now() - p.time < 30000
     );
 
-    const isRecent = !candles || (latestSignal.candleIndex >= candles.length - 12);
-    const isStillValid = latestSignal.action === "BUY CE"
-      ? quote.bid <= latestSignal.tp1 && quote.bid >= latestSignal.sl
-      : quote.bid >= latestSignal.tp1 && quote.bid <= latestSignal.sl;
-
-    if (!alreadyOpenOnSymbol && !recentlyTradedSymbol && latestSignal && isRecent && isStillValid) {
+    if (!isSameDirection && !recentlyTraded && latestSignal) {
       const optContract = getRecommendedOptionContract(quote.symbol, latestSignal.action, quote.bid);
       const optSpec = getOptionSpec(quote.symbol);
-      const currencySym = quote.currency || state.currency || "₹";
+      const currencySym = quote.currency || workingState.currency || "₹";
 
       const botLog: AutoBotLog = {
         id: `bot-pavp-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
         timestamp: Date.now(),
         type: "trade",
-        message: `⚡ [PAVP Bot Trigger] ${latestSignal.label} confirmed on ${quote.symbol}! Auto-executing 1 Lot (${optSpec.lotSize} Qty) ${quote.symbol} ${optContract.strike} ${optContract.type} @ ${currencySym}${optContract.premiumAsk.toFixed(2)}. SL: ${currencySym}${latestSignal.sl}, TP1 (POC): ${currencySym}${latestSignal.tp1}.`,
+        message: `⚡ [15M PAVP Auto-Trade] ${latestSignal.label} triggered on ${quote.symbol}! Auto-executing 1 Lot (${optSpec.lotSize} Qty) ${quote.symbol} ${optContract.strike} ${optContract.type} @ ${currencySym}${optContract.premiumAsk.toFixed(2)}. SL: ${currencySym}${latestSignal.sl}, TP1 (POC): ${currencySym}${latestSignal.tp1}.`,
       };
 
-      const currentLogs = Array.isArray(state.auto_bot?.logs) ? state.auto_bot.logs : [];
+      const currentLogs = Array.isArray(workingState.auto_bot?.logs) ? workingState.auto_bot.logs : [];
       const stateWithLog: DemoAccountState = {
-        ...state,
+        ...workingState,
         auto_bot: {
-          ...state.auto_bot,
+          ...workingState.auto_bot,
           logs: [botLog, ...currentLogs].slice(0, 50),
         },
       };
 
       const tradeRes = executeDemoTrade(stateWithLog, {
         symbol: quote.symbol,
-        type: latestSignal.action === "BUY CE" ? "BUY" : "SELL",
+        type: tradeType,
         volume: 1.0, // 1 lot standard
         quote,
         sl: latestSignal.sl,
         tp: latestSignal.tp1,
-        comment: latestSignal.label,
+        comment: `15M PAVP: ${latestSignal.label}`,
         optionContractName: `${quote.symbol} ${optContract.strike} ${optContract.type}`,
         optionType: optContract.type,
         optionStrike: optContract.strike,
@@ -910,7 +915,7 @@ export function evaluateAutoBot(
     const alert = alerts.find((a) => a.symbol === quote.symbol && a.status === "CONFIRMED");
     const alreadyOpenOnSymbol = openPositions.some((p) => p.symbol === quote.symbol);
     const recentlyTradedSymbol = openPositions.some(
-      (p) => p.symbol === quote.symbol && typeof p.time === "number" && Date.now() - p.time < 60000
+      (p) => p.symbol === quote.symbol && typeof p.time === "number" && Date.now() - p.time < 30000
     );
 
     if (alert && !alreadyOpenOnSymbol && !recentlyTradedSymbol) {
@@ -923,7 +928,7 @@ export function evaluateAutoBot(
         id: `bot-alert-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
         timestamp: Date.now(),
         type: "trade",
-        message: `⚡ [PAVP Alert Trigger] ${alert.title} confirmed on ${quote.symbol}! Auto-executing 1 Lot (${optSpec.lotSize} Qty) ${quote.symbol} ${optContract.strike} ${optContract.type} @ ${currencySym}${optContract.premiumAsk.toFixed(2)}. SL: ${currencySym}${alert.stopLoss}, TP1 (POC): ${currencySym}${alert.takeProfit1}.`,
+        message: `⚡ [15M PAVP Alert Auto-Trade] ${alert.title} confirmed on ${quote.symbol}! Auto-executing 1 Lot (${optSpec.lotSize} Qty) ${quote.symbol} ${optContract.strike} ${optContract.type} @ ${currencySym}${optContract.premiumAsk.toFixed(2)}. SL: ${currencySym}${alert.stopLoss}, TP1 (POC): ${currencySym}${alert.takeProfit1}.`,
       };
 
       const currentLogs = Array.isArray(state.auto_bot?.logs) ? state.auto_bot.logs : [];
@@ -942,7 +947,7 @@ export function evaluateAutoBot(
         quote,
         sl: alert.stopLoss,
         tp: alert.takeProfit1,
-        comment: `PAVP: ${alert.patternType}`,
+        comment: `15M PAVP: ${alert.patternType}`,
         optionContractName: `${quote.symbol} ${optContract.strike} ${optContract.type}`,
         optionType: optContract.type,
         optionStrike: optContract.strike,
