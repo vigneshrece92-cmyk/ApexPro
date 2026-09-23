@@ -8,6 +8,7 @@ import {
   Quote,
   AIAnalysisResult,
   InstitutionalAlert,
+  OptionContract,
 } from "@/lib/types";
 import { INITIAL_QUOTES, generateRealisticCandles } from "@/lib/defaultData";
 import { generateTradeSignalFromData } from "@/lib/technicals";
@@ -34,6 +35,8 @@ import {
   DemoAccountState,
   INITIAL_ACCOUNT_STATE,
   loadDemoAccount,
+  saveDemoAccount,
+  executeDemoTrade,
   tickDemoPositions,
   evaluateAutoBot,
 } from "@/lib/demoTradingEngine";
@@ -367,6 +370,34 @@ export default function TerminalDashboard() {
     notifiedClosedTicketsRef.current.clear();
   };
 
+  const handleExecuteOptionTrade = (contract: OptionContract, action: "BUY" | "SELL") => {
+    const symQuote = allQuotes[contract.symbol] || quote;
+    const res = executeDemoTrade(demoAccount, {
+      symbol: contract.symbol,
+      type: action,
+      volume: 1,
+      quote: symQuote,
+      sl: contract.type === "CE" ? symQuote.bid - 45 : symQuote.bid + 45,
+      tp: contract.type === "CE" ? symQuote.bid + 90 : symQuote.bid - 90,
+      comment: `OptionAlgo: ${contract.strike} ${contract.type}`,
+      optionContractName: `${contract.symbol} ${contract.expiry} ${contract.strike} ${contract.type}`,
+      optionType: contract.type,
+      optionStrike: contract.strike,
+      optionEntryPremium: contract.premiumAsk || contract.premiumBid,
+      lotSizeMultiplier: contract.lotSize,
+      currency: "₹",
+    });
+
+    if (res.success) {
+      setDemoAccount(res.state);
+      saveDemoAccount(res.state);
+      const optPrice = (contract.premiumAsk || contract.premiumBid).toFixed(2);
+      sendTelegramNotification(
+        `🎯 <b>OptionAlgo 1-Click Trade Executed</b>\n━━━━━━━━━━━━━━━━━━━━\n<b>Instrument:</b> ${contract.symbol} ${contract.expiry} ${contract.strike} ${contract.type}\n<b>Side:</b> ${action} 1 Lot (${contract.lotSize} Qty)\n<b>Premium:</b> ₹${optPrice}\n<b>Spot Ref:</b> ₹${symQuote.bid}\n<b>Delta:</b> ${contract.delta} | <b>Theta:</b> ${contract.theta}\n<i>Executed directly from OptionAlgo Chart Terminal</i>`
+      ).catch(console.error);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-terminal-bg text-terminal-text flex flex-col">
       {/* Top Barometer & Header */}
@@ -415,6 +446,7 @@ export default function TerminalDashboard() {
               onChangeTimeframe={setTimeframe}
               onAnalyzeLiveChart={handleAnalyzeLiveChart}
               isAnalyzing={isAnalyzing}
+              onExecuteOptionTrade={handleExecuteOptionTrade}
             />
           </div>
 

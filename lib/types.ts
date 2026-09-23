@@ -24,7 +24,11 @@ export interface OptionContract {
   delta: number;
   gamma?: number;
   theta?: number;
+  vega?: number;
   iv?: number;
+  oi?: number;
+  oiChange?: number;
+  volume?: number;
 }
 
 export interface OptionChainItem {
@@ -32,6 +36,25 @@ export interface OptionChainItem {
   call: OptionContract;
   put: OptionContract;
   isATM: boolean;
+}
+
+export interface OptionsIntelligenceData {
+  callWall: number;
+  putWall: number;
+  maxPain: number;
+  gammaFlip: number;
+  pcr: number;
+  totalCallOI: number;
+  totalPutOI: number;
+  expectedMove: number;
+  expectedMoveUpper: number;
+  expectedMoveLower: number;
+  atmIV: number;
+  cpr: {
+    pivot: number;
+    tc: number;
+    bc: number;
+  };
 }
 
 export type TimeFrame = "1m" | "5m" | "15m" | "1h" | "4h" | "1d";

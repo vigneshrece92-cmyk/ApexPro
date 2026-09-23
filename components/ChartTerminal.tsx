@@ -1,16 +1,30 @@
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
-import { AssetSymbol, TimeFrame, Candle, Quote } from "@/lib/types";
+import React, { useEffect, useRef, useState, useMemo, useCallback } from "react";
+import {
+  AssetSymbol,
+  TimeFrame,
+  Candle,
+  Quote,
+  OptionContract,
+  OptionChainItem,
+  OptionsIntelligenceData,
+} from "@/lib/types";
 import {
   computeTechnicals,
-  calculateVolumeProfile,
   calculatePivotAnchoredVolumeProfile,
   getPAVPConfigForTimeframe,
-  detectChartSignals,
   detectPAVPSignals,
   calculateSessionLevels,
 } from "@/lib/technicals";
+import {
+  generateOptionChain,
+  calculateOptionIntelligence,
+  getUpcomingOptionExpiry,
+  getOptionSpec,
+  calculateATMStrike,
+  estimateOptionPremium,
+} from "@/lib/optionsEngine";
 import {
   Sparkles,
   Layers,
@@ -18,7 +32,6 @@ import {
   Tv,
   Percent,
   Box,
-  Zap,
   RotateCcw,
   Copy,
   Check,
@@ -32,6 +45,7 @@ import {
   Anchor,
   Flame,
   ExternalLink,
+  Zap,
 } from "lucide-react";
 
 interface PAVPOverlayCoords {
@@ -67,6 +81,7 @@ interface ChartTerminalProps {
   onChangeTimeframe: (tf: TimeFrame) => void;
   onAnalyzeLiveChart: () => void;
   isAnalyzing?: boolean;
+  onExecuteOptionTrade?: (contract: OptionContract, action: "BUY" | "SELL") => void;
 }
 
 export const ChartTerminal: React.FC<ChartTerminalProps> = ({
@@ -78,6 +93,7 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
   onChangeTimeframe,
   onAnalyzeLiveChart,
   isAnalyzing,
+  onExecuteOptionTrade,
 }) => {
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartInstanceRef = useRef<any>(null);
@@ -85,9 +101,26 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
   const livePriceLineRef = useRef<any>(null);
   const lastCandleRef = useRef<Candle | null>(null);
 
+  // Tri-Engine Mode: "tradingview" | "apex" | "nse"
+  const [chartEngine, setChartEngine] = useState<"tradingview" | "apex" | "nse">("apex");
 
-  // Mode: "smart" (Professional Interactive Lightweight Canvas with VP, SMC, Signals) or "nse" (Official NSE Technical Charting)
-  const [chartMode, setChartMode] = useState<"nse" | "smart">("smart");
+  // OptionAlgo Subtab Navigation: "chain" | "oigex" | "greeks" | "smc"
+  const [activeSubtab, setActiveSubtab] = useState<"chain" | "oigex" | "greeks" | "smc">("chain");
+
+  // OptionAlgo Strike Picker Toolbar State
+  const spec = useMemo(() => getOptionSpec(activeSymbol), [activeSymbol]);
+  const defaultExpiry = useMemo(() => getUpcomingOptionExpiry(activeSymbol), [activeSymbol]);
+  const [selectedExpiry, setSelectedExpiry] = useState<string>(defaultExpiry);
+  const atmStrike = useMemo(() => calculateATMStrike(quote.bid, spec.strikeStep), [quote.bid, spec.strikeStep]);
+  const [selectedStrike, setSelectedStrike] = useState<number>(atmStrike);
+  const [selectedSide, setSelectedSide] = useState<"CE" | "PE">("CE");
+  const [tradeSuccessMsg, setTradeSuccessMsg] = useState<string | null>(null);
+
+  // Sync selected strike & expiry when symbol changes
+  useEffect(() => {
+    setSelectedExpiry(getUpcomingOptionExpiry(activeSymbol));
+    setSelectedStrike(calculateATMStrike(quote.bid, spec.strikeStep));
+  }, [activeSymbol]);
 
   // Indicator & SMC Overlays - Clean professional defaults (Pure PAVP by default)
   const [showEMA, setShowEMA] = useState<boolean>(false);
@@ -99,16 +132,15 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
   const [showVP, setShowVP] = useState<boolean>(true); // Pivot-Anchored Volume Profile (POC, VAH, VAL)
   const [showVWCB, setShowVWCB] = useState<boolean>(true); // Volume Weighted Colored Bars
   const [showSignals, setShowSignals] = useState<boolean>(true); // In-chart BUY / SELL signals (strictly VP)
-  const [showPDHL, setShowPDHL] = useState<boolean>(false); // Previous Day High & Low (PDH / PDL)
+  const [showPDHL, setShowPDHL] = useState<boolean>(true); // Previous Day High & Low (PDH / PDL)
   const [showORB, setShowORB] = useState<boolean>(false); // Opening Range High & Low (ORB 15M/30M)
-  const [showAsia, setShowAsia] = useState<boolean>(false); // Asian Session High & Low (Asia H / Asia L)
+  const [showAsia, setShowAsia] = useState<boolean>(false); // Asian Session High & Low
   const [showDO, setShowDO] = useState<boolean>(false); // Daily Open (DO)
-  const [showPAVPPanel, setShowPAVPPanel] = useState<boolean>(false); // Hidden by default so chart is 100% full-screen visible
-  const [showLevelDrawer, setShowLevelDrawer] = useState<boolean>(false); // SMC Level Drawer
-  const [showRSI, setShowRSI] = useState<boolean>(false); // RSI Sub-Panel
+  const [showWalls, setShowWalls] = useState<boolean>(true); // Gamma Walls (Call Wall / Put Wall / Max Pain)
+  const [showEMCone, setShowEMCone] = useState<boolean>(true); // Expected Move Cone
   const [overlayCoords, setOverlayCoords] = useState<PAVPOverlayCoords | null>(null);
 
-  // SMC Level Copy Feedback and Radar Drawer
+  // SMC Level Copy Feedback
   const [copiedLevel, setCopiedLevel] = useState<string | null>(null);
 
   const copyToClipboard = (text: string, label: string) => {
@@ -120,15 +152,15 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
   };
 
   // Technical & SMC Calculations
-  const technicals = React.useMemo(() => {
+  const technicals = useMemo(() => {
     return computeTechnicals(candles, quote.pipPrecision, timeframe);
   }, [candles, quote.pipPrecision, timeframe]);
 
   const smc = technicals.smc;
 
   // Institutional Pivot-Anchored Volume Profile (PineScript v6 dgtrd PAVP)
-  const pavpConfig = React.useMemo(() => getPAVPConfigForTimeframe(timeframe), [timeframe]);
-  const pavp = React.useMemo(() => {
+  const pavpConfig = useMemo(() => getPAVPConfigForTimeframe(timeframe), [timeframe]);
+  const pavp = useMemo(() => {
     return (
       technicals.pavp ||
       calculatePivotAnchoredVolumeProfile(
@@ -142,14 +174,63 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
   }, [technicals.pavp, candles, pavpConfig, quote.pipPrecision]);
 
   // Volume Profile (VAH, VAL, POC) Signals (strictly VP)
-  const pavpSignalResult = React.useMemo(() => {
+  const pavpSignalResult = useMemo(() => {
     return detectPAVPSignals(candles, pavp, activeSymbol, quote.pipPrecision);
   }, [candles, pavp, activeSymbol, quote.pipPrecision]);
 
   const chartSignals = pavpSignalResult.markers;
 
+  // Generate dynamic Option Chain & Option Intelligence
+  const optionChain: OptionChainItem[] = useMemo(() => {
+    return generateOptionChain(activeSymbol, quote.bid);
+  }, [activeSymbol, quote.bid]);
+
+  const optionIntel: OptionsIntelligenceData = useMemo(() => {
+    return calculateOptionIntelligence(
+      activeSymbol,
+      quote.bid,
+      optionChain,
+      quote.high24h,
+      quote.low24h,
+      quote.bid
+    );
+  }, [activeSymbol, quote.bid, optionChain, quote.high24h, quote.low24h]);
+
+  // Current contract under strike toolbar
+  const currentContract: OptionContract = useMemo(() => {
+    const est = estimateOptionPremium(quote.bid, selectedStrike, selectedSide, activeSymbol);
+    return {
+      symbol: activeSymbol,
+      strike: selectedStrike,
+      type: selectedSide,
+      expiry: selectedExpiry,
+      spotPrice: quote.bid,
+      premiumBid: Math.max(0.5, est.premium - 0.5),
+      premiumAsk: est.premium + 0.5,
+      lotSize: spec.lotSize,
+      delta: est.delta,
+      gamma: est.gamma,
+      theta: est.theta,
+      vega: est.vega,
+      iv: est.iv,
+    };
+  }, [activeSymbol, selectedStrike, selectedSide, selectedExpiry, quote.bid, spec.lotSize]);
+
+  // Quick 1-click trade execution handler
+  const handleQuickTrade = (contract: OptionContract, action: "BUY" | "SELL" = "BUY") => {
+    if (onExecuteOptionTrade) {
+      onExecuteOptionTrade(contract, action);
+      setTradeSuccessMsg(
+        `✓ Executed ${action} 1 Lot ${contract.symbol} ${contract.strike} ${contract.type} (${contract.lotSize} Qty) @ ₹${(
+          contract.premiumAsk || contract.premiumBid
+        ).toFixed(2)}`
+      );
+      setTimeout(() => setTradeSuccessMsg(null), 3500);
+    }
+  };
+
   // Real-time synchronization of the Anchored Volume Profile SVG overlay
-  const updatePAVPOverlay = React.useCallback(() => {
+  const updatePAVPOverlay = useCallback(() => {
     if (!chartInstanceRef.current || !candleSeriesRef.current || !showVP || !pavp || pavp.poc <= 0) {
       setOverlayCoords(null);
       return;
@@ -172,12 +253,8 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
 
     const containerWidth = chartContainerRef.current?.clientWidth || 800;
 
-    if (anchorX === null) {
-      anchorX = 0;
-    }
-    if (latestX === null) {
-      latestX = containerWidth - 55;
-    }
+    if (anchorX === null) anchorX = 0;
+    if (latestX === null) latestX = containerWidth - 55;
 
     const vahY = series.priceToCoordinate(pavp.vah);
     const valY = series.priceToCoordinate(pavp.val);
@@ -221,20 +298,20 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
   }, [candles, pavp, showVP]);
 
   // Institutional Session Liquidity (PDH/PDL, ORB, Asia H/L, Daily Open)
-  const sessionLevels = React.useMemo(() => {
+  const sessionLevels = useMemo(() => {
     return technicals.sessionLevels || calculateSessionLevels(candles, quote.pipPrecision);
   }, [technicals.sessionLevels, candles, quote.pipPrecision]);
 
-  const candlesSignature = React.useMemo(() => {
+  const candlesSignature = useMemo(() => {
     if (!candles || candles.length === 0) return "empty";
     const first = candles[0];
     const last = candles[candles.length - 1];
     return `${candles.length}_${first.time}_${last.time}_${last.close}`;
   }, [candles]);
 
-  // Mount TradingView Lightweight Charts if in "smart" mode
+  // Mount TradingView Lightweight Charts if in "apex" mode
   useEffect(() => {
-    if (chartMode !== "smart" || !chartContainerRef.current) return;
+    if (chartEngine !== "apex" || !chartContainerRef.current) return;
 
     let isDisposed = false;
     let chart: any = null;
@@ -243,7 +320,6 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
     import("lightweight-charts").then((lwc) => {
       if (isDisposed || !chartContainerRef.current) return;
 
-      // Clean previous chart instance cleanly before mounting new one
       if (chartInstanceRef.current) {
         try {
           chartInstanceRef.current.remove();
@@ -256,16 +332,16 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
 
       chart = lwc.createChart(chartContainerRef.current, {
         width: chartContainerRef.current.clientWidth,
-        height: chartContainerRef.current.clientHeight || 460,
+        height: chartContainerRef.current.clientHeight || 480,
         layout: {
-          background: { type: lwc.ColorType.Solid, color: "#0B0E14" },
+          background: { type: lwc.ColorType.Solid, color: "#06060f" },
           textColor: "#94A3B8",
           fontSize: 11,
           fontFamily: "var(--font-mono), monospace",
         },
         grid: {
-          vertLines: { color: "rgba(255, 255, 255, 0.03)" },
-          horzLines: { color: "rgba(255, 255, 255, 0.03)" },
+          vertLines: { color: "rgba(255, 255, 255, 0.025)" },
+          horzLines: { color: "rgba(255, 255, 255, 0.025)" },
         },
         crosshair: {
           mode: lwc.CrosshairMode.Normal,
@@ -287,17 +363,17 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
         },
         watermark: {
           visible: true,
-          fontSize: 40,
+          fontSize: 36,
           horzAlign: "center",
           vertAlign: "center",
-          color: "rgba(255, 255, 255, 0.035)",
+          color: "rgba(255, 255, 255, 0.03)",
           text: `${activeSymbol}  ${timeframe.toUpperCase()}`,
         },
       });
 
       chartInstanceRef.current = chart;
 
-      // Institutional Candlestick Palette (TradingView Emerald Bull & Crimson Bear)
+      // Institutional Candlestick Palette (Emerald Bull & Crimson Bear)
       const candleSeries = chart.addCandlestickSeries({
         upColor: "#089981",
         downColor: "#F23645",
@@ -337,7 +413,6 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
 
       // Pivot-Anchored Volume Profile Levels (PAVP: POC, VAH 68%, VAL 68%)
       if (showVP && pavp && pavp.poc > 0) {
-        // Point of Control (Highest Volume Node - Red #EF4444)
         candleSeries.createPriceLine({
           price: pavp.poc,
           color: "#EF4444",
@@ -347,7 +422,6 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
           title: `POC ${pavp.poc}`,
         });
 
-        // Value Area High (68% Volume Boundary - Institutional Blue #2563EB)
         candleSeries.createPriceLine({
           price: pavp.vah,
           color: "#2563EB",
@@ -357,7 +431,6 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
           title: `VAH ${pavp.vah}`,
         });
 
-        // Value Area Low (68% Volume Boundary - Institutional Blue #2563EB)
         candleSeries.createPriceLine({
           price: pavp.val,
           color: "#2563EB",
@@ -366,25 +439,65 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
           axisLabelVisible: true,
           title: `VAL ${pavp.val}`,
         });
+      }
 
-        // Anchor Pivot Point Line
-        if (pavp.pivot) {
+      // Gamma Walls (Call Wall / Put Wall / Max Pain)
+      if (showWalls && optionIntel) {
+        if (optionIntel.callWall > 0) {
           candleSeries.createPriceLine({
-            price: pavp.pivot.price,
-            color: "#A855F7",
-            lineWidth: 1,
+            price: optionIntel.callWall,
+            color: "#F59E0B",
+            lineWidth: 1.5,
             lineStyle: lwc.LineStyle.Dotted,
-            axisLabelVisible: false,
-            title: `⚓ ANCHOR (${pavp.pivot.type.toUpperCase()})`,
+            axisLabelVisible: true,
+            title: `CALL WALL ${optionIntel.callWall}`,
+          });
+        }
+        if (optionIntel.putWall > 0) {
+          candleSeries.createPriceLine({
+            price: optionIntel.putWall,
+            color: "#10B981",
+            lineWidth: 1.5,
+            lineStyle: lwc.LineStyle.Dotted,
+            axisLabelVisible: true,
+            title: `PUT WALL ${optionIntel.putWall}`,
+          });
+        }
+        if (optionIntel.maxPain > 0) {
+          candleSeries.createPriceLine({
+            price: optionIntel.maxPain,
+            color: "#A855F7",
+            lineWidth: 1.5,
+            lineStyle: lwc.LineStyle.LargeDashed,
+            axisLabelVisible: true,
+            title: `MAX PAIN ${optionIntel.maxPain}`,
           });
         }
       }
 
-      // Smooth EMAs without raw price scribbles
+      // Expected Move Cone Lines
+      if (showEMCone && optionIntel && optionIntel.expectedMoveUpper > 0) {
+        candleSeries.createPriceLine({
+          price: optionIntel.expectedMoveUpper,
+          color: "rgba(255, 255, 255, 0.5)",
+          lineWidth: 1,
+          lineStyle: lwc.LineStyle.Dotted,
+          axisLabelVisible: false,
+          title: `EM UPPER (+${optionIntel.expectedMove})`,
+        });
+        candleSeries.createPriceLine({
+          price: optionIntel.expectedMoveLower,
+          color: "rgba(255, 255, 255, 0.5)",
+          lineWidth: 1,
+          lineStyle: lwc.LineStyle.Dotted,
+          axisLabelVisible: false,
+          title: `EM LOWER (-${optionIntel.expectedMove})`,
+        });
+      }
+
+      // Smooth EMAs
       if (showEMA) {
         const closes = candles.map((c) => c.close);
-
-        // EMA 20 (Cyan)
         const ema20Series = chart.addLineSeries({
           color: "#38BDF8",
           lineWidth: 1.5,
@@ -394,7 +507,6 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
         const ema20Values = calculateEMALocal(closes, 20);
         ema20Series.setData(candles.map((c, i) => ({ time: c.time as any, value: ema20Values[i] })));
 
-        // EMA 50 (Orange)
         const ema50Series = chart.addLineSeries({
           color: "#F59E0B",
           lineWidth: 1.5,
@@ -405,79 +517,7 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
         ema50Series.setData(candles.map((c, i) => ({ time: c.time as any, value: ema50Values[i] })));
       }
 
-      // 1. Classic S/R Lines (Clean & minimal)
-      if (showSR && technicals.pivots) {
-        candleSeries.createPriceLine({
-          price: technicals.pivots.r1,
-          color: "rgba(255, 59, 48, 0.7)",
-          lineWidth: 1,
-          lineStyle: lwc.LineStyle.Dotted,
-          axisLabelVisible: false,
-          title: `R1 ${technicals.pivots.r1}`,
-        });
-        candleSeries.createPriceLine({
-          price: technicals.pivots.s1,
-          color: "rgba(0, 230, 118, 0.7)",
-          lineWidth: 1,
-          lineStyle: lwc.LineStyle.Dotted,
-          axisLabelVisible: false,
-          title: `S1 ${technicals.pivots.s1}`,
-        });
-      }
-
-      // 2. Fibonacci Retracements (Only Golden Pocket & Key Levels)
-      if (showFib && smc?.fibonacci) {
-        const fib = smc.fibonacci;
-        candleSeries.createPriceLine({
-          price: fib.fib618,
-          color: "#FFD700",
-          lineWidth: 1.5,
-          lineStyle: lwc.LineStyle.Dashed,
-          axisLabelVisible: false,
-          title: `GOLDEN 0.618 (${fib.fib618})`,
-        });
-      }
-
-      // 3. Premium & Discount 50% Equilibrium Divider
-      if (showPD && smc) {
-        candleSeries.createPriceLine({
-          price: smc.equilibriumPrice,
-          color: "#38BDF8",
-          lineWidth: 1,
-          lineStyle: lwc.LineStyle.LargeDashed,
-          axisLabelVisible: false,
-          title: `50% EQ (${smc.equilibriumPrice})`,
-        });
-      }
-
-      // 4. Order Blocks (Only single nearest active OB to prevent clutter)
-      if (showOB && smc?.orderBlocks && smc.orderBlocks.length > 0) {
-        const activeOB = smc.orderBlocks[smc.orderBlocks.length - 1];
-        const isBull = activeOB.type === "bullish";
-        candleSeries.createPriceLine({
-          price: isBull ? activeOB.high : activeOB.low,
-          color: isBull ? "#00E676" : "#FF3B30",
-          lineWidth: 1.5,
-          lineStyle: lwc.LineStyle.Solid,
-          axisLabelVisible: false,
-          title: `${isBull ? "BULL" : "BEAR"} OB (${activeOB.low})`,
-        });
-      }
-
-      // 5. Fair Value Gaps (Only single nearest unmitigated gap)
-      if (showFVG && smc?.fvgs && smc.fvgs.length > 0) {
-        const activeFVG = smc.fvgs[smc.fvgs.length - 1];
-        candleSeries.createPriceLine({
-          price: activeFVG.top,
-          color: "#A855F7",
-          lineWidth: 1.5,
-          lineStyle: lwc.LineStyle.Dashed,
-          axisLabelVisible: false,
-          title: `FVG GAP (${activeFVG.bottom}-${activeFVG.top})`,
-        });
-      }
-
-      // 6. Previous Day High (PDH) & Previous Day Low (PDL) - Major Daily Liquidity
+      // Previous Day High & Low
       if (showPDHL && sessionLevels && sessionLevels.pdh > 0) {
         candleSeries.createPriceLine({
           price: sessionLevels.pdh,
@@ -497,7 +537,7 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
         });
       }
 
-      // 7. Opening Range Breakout (ORB High, Low & 50% Mid)
+      // Opening Range Breakout (ORB)
       if (showORB && sessionLevels && sessionLevels.orbHigh > 0) {
         candleSeries.createPriceLine({
           price: sessionLevels.orbHigh,
@@ -515,46 +555,6 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
           axisLabelVisible: false,
           title: `ORB-L ${sessionLevels.orbLow}`,
         });
-        candleSeries.createPriceLine({
-          price: sessionLevels.orbMid,
-          color: "rgba(255, 255, 255, 0.4)",
-          lineWidth: 1,
-          lineStyle: lwc.LineStyle.Dotted,
-          axisLabelVisible: false,
-          title: `ORB 50%`,
-        });
-      }
-
-      // 8. Asian Session Range (Asia High & Asia Low)
-      if (showAsia && sessionLevels && sessionLevels.asiaHigh > 0) {
-        candleSeries.createPriceLine({
-          price: sessionLevels.asiaHigh,
-          color: "#818CF8",
-          lineWidth: 1,
-          lineStyle: lwc.LineStyle.Dashed,
-          axisLabelVisible: false,
-          title: `ASIA-H ${sessionLevels.asiaHigh}`,
-        });
-        candleSeries.createPriceLine({
-          price: sessionLevels.asiaLow,
-          color: "#2DD4BF",
-          lineWidth: 1,
-          lineStyle: lwc.LineStyle.Dashed,
-          axisLabelVisible: false,
-          title: `ASIA-L ${sessionLevels.asiaLow}`,
-        });
-      }
-
-      // 9. Daily Open (DO) Baseline
-      if (showDO && sessionLevels && sessionLevels.dailyOpen > 0) {
-        candleSeries.createPriceLine({
-          price: sessionLevels.dailyOpen,
-          color: "#FACC15",
-          lineWidth: 1.5,
-          lineStyle: lwc.LineStyle.LargeDashed,
-          axisLabelVisible: false,
-          title: `DAILY OPEN ${sessionLevels.dailyOpen}`,
-        });
       }
 
       try {
@@ -563,13 +563,11 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
         console.debug("fitContent error:", e);
       }
 
-      // Continuous synchronization of the Anchored Volume Profile SVG overlay
       const onRangeChange = () => {
         updatePAVPOverlay();
       };
       chart.timeScale().subscribeVisibleLogicalRangeChange(onRangeChange);
 
-      // Initial compute after paint
       setTimeout(() => {
         updatePAVPOverlay();
       }, 60);
@@ -620,7 +618,7 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
       livePriceLineRef.current = null;
     };
   }, [
-    chartMode,
+    chartEngine,
     activeSymbol,
     timeframe,
     candlesSignature,
@@ -634,31 +632,32 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
     showSignals,
     showPDHL,
     showORB,
-    showAsia,
-    showDO,
+    showWalls,
+    showEMCone,
     pavp.poc,
     pavp.vah,
     pavp.val,
-    sessionLevels.pdh,
-    sessionLevels.pdl,
-    sessionLevels.orbHigh,
-    sessionLevels.orbLow,
+    optionIntel.callWall,
+    optionIntel.putWall,
+    optionIntel.maxPain,
+    optionIntel.expectedMoveUpper,
+    optionIntel.expectedMoveLower,
   ]);
 
   // Re-synchronize PAVP overlay whenever candles or levels change
   useEffect(() => {
-    if (chartMode !== "smart") return;
+    if (chartEngine !== "apex") return;
     const timer = setTimeout(() => {
       updatePAVPOverlay();
     }, 60);
     return () => clearTimeout(timer);
-  }, [candlesSignature, pavp, showVP, updatePAVPOverlay, chartMode]);
+  }, [candlesSignature, pavp, showVP, updatePAVPOverlay, chartEngine]);
 
-  // Real-time ticking engine: updates last candle & live price line continuously
+  // Real-time ticking engine for apex mode
   useEffect(() => {
-    if (chartMode !== "smart") return;
+    if (chartEngine !== "apex") return;
 
-    let tfSec = 300; // 5m default
+    let tfSec = 300;
     if (timeframe === "1m") tfSec = 60;
     else if (timeframe === "5m") tfSec = 300;
     else if (timeframe === "15m") tfSec = 900;
@@ -667,13 +666,19 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
     else if (timeframe === "1d") tfSec = 86400;
 
     const updateLiveTick = (liveBid: number) => {
-      if (!chartInstanceRef.current || !candleSeriesRef.current || !lastCandleRef.current || !liveBid || isNaN(liveBid)) return;
+      if (
+        !chartInstanceRef.current ||
+        !candleSeriesRef.current ||
+        !lastCandleRef.current ||
+        !liveBid ||
+        isNaN(liveBid)
+      )
+        return;
 
       const last = lastCandleRef.current;
       const nowSec = Math.floor(Date.now() / 1000);
       const currentBucketTime = Math.floor(nowSec / tfSec) * tfSec;
 
-      // Single-tick delta clamp: prevent abnormal price gap from stretching a candle into a cliff
       const currentClose = last.close;
       const maxDelta = quote.pipPrecision === 2 ? 2.5 : 0.0025;
       let safeBid = liveBid;
@@ -681,7 +686,6 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
         safeBid = +(currentClose + Math.sign(liveBid - currentClose) * maxDelta).toFixed(quote.pipPrecision);
       }
 
-      // If timeframe period has rolled over, cleanly start a new candle!
       if (typeof last.time === "number" && currentBucketTime > last.time) {
         const newCandle = {
           time: currentBucketTime as any,
@@ -699,13 +703,10 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
               title: `LIVE BID ${safeBid.toFixed(quote.pipPrecision)}`,
             });
           }
-        } catch {
-          // ignore update glitch during chart rebuild
-        }
+        } catch {}
         return;
       }
 
-      // Otherwise update the active candle
       const newHigh = Math.max(last.high, safeBid);
       const newLow = Math.min(last.low, safeBid);
       const updatedCandle = {
@@ -726,16 +727,11 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
             title: `LIVE BID ${safeBid.toFixed(quote.pipPrecision)}`,
           });
         }
-      } catch {
-        // ignore update glitch during chart rebuild
-      }
+      } catch {}
     };
 
-    // 1. Update immediately on live quote change
     updateLiveTick(quote.bid);
 
-    // 2. Micro-tick engine: simulates organic interbank sub-second price action
-    // between API polls, ensuring the chart is visibly breathing and active 24/7!
     const tickInterval = setInterval(() => {
       if (!quote.bid) return;
       const pipDelta = quote.pipPrecision === 2 ? 0.04 : 0.00004;
@@ -745,22 +741,21 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
     }, 1200);
 
     return () => clearInterval(tickInterval);
-  }, [quote.bid, quote.pipPrecision, chartMode, timeframe]);
+  }, [quote.bid, quote.pipPrecision, chartEngine, timeframe]);
 
   const resetOverlays = () => {
-    setShowEMA(true);
-    setShowSR(true);
-    setShowPD(true);
+    setShowEMA(false);
+    setShowSR(false);
+    setShowPD(false);
     setShowVP(true);
     setShowSignals(true);
     setShowPDHL(true);
-    setShowORB(true);
-    setShowAsia(false);
-    setShowDO(false);
+    setShowORB(false);
+    setShowWalls(true);
+    setShowEMCone(true);
     setShowFib(false);
     setShowOB(false);
     setShowFVG(false);
-    setShowRSI(false);
   };
 
   const timeframes: TimeFrame[] = ["1m", "5m", "15m", "1h", "4h", "1d"];
@@ -768,35 +763,48 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
   const indianAssets: { sym: AssetSymbol; label: string; badge: string }[] = [
     { sym: "NIFTY", label: "NIFTY 50", badge: "F&O" },
     { sym: "BANKNIFTY", label: "BANK NIFTY", badge: "F&O" },
+    { sym: "FINNIFTY", label: "FIN NIFTY", badge: "F&O" },
+    { sym: "SENSEX", label: "SENSEX", badge: "BSE" },
     { sym: "CRUDEOIL", label: "CRUDE OIL", badge: "MCX" },
     { sym: "NATURALGAS", label: "NATURAL GAS", badge: "MCX" },
-    { sym: "SENSEX", label: "SENSEX", badge: "BSE" },
-    { sym: "FINNIFTY", label: "FIN NIFTY", badge: "F&O" },
   ];
 
-  const currentAssets = indianAssets;
-
+  // TradingView Symbol Mapping
   const getTradingViewSymbol = (sym: AssetSymbol): string => {
     switch (sym) {
-      case "NIFTY": return "NSE:NIFTY";
-      case "BANKNIFTY": return "NSE:BANKNIFTY";
-      case "CRUDEOIL": return "MCX:CRUDEOIL1!";
-      case "NATURALGAS": return "MCX:NATURALGAS1!";
-      case "SENSEX": return "BSE:SENSEX";
-      case "FINNIFTY": return "NSE:FINNIFTY";
-      default: return "NSE:NIFTY";
+      case "NIFTY":
+        return "NSE:NIFTY";
+      case "BANKNIFTY":
+        return "NSE:BANKNIFTY";
+      case "FINNIFTY":
+        return "NSE:FINNIFTY";
+      case "SENSEX":
+        return "BSE:SENSEX";
+      case "CRUDEOIL":
+        return "MCX:CRUDEOIL1!";
+      case "NATURALGAS":
+        return "MCX:NATURALGAS1!";
+      default:
+        return "NSE:NIFTY";
     }
   };
 
   const getTradingViewInterval = (tf: TimeFrame): string => {
     switch (tf) {
-      case "1m": return "1";
-      case "5m": return "5";
-      case "15m": return "15";
-      case "1h": return "60";
-      case "4h": return "240";
-      case "1d": return "D";
-      default: return "5";
+      case "1m":
+        return "1";
+      case "5m":
+        return "5";
+      case "15m":
+        return "15";
+      case "1h":
+        return "60";
+      case "4h":
+        return "240";
+      case "1d":
+        return "D";
+      default:
+        return "15";
     }
   };
 
@@ -804,71 +812,65 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
   const tvInterval = getTradingViewInterval(timeframe);
   const tvEmbedUrl = `https://s.tradingview.com/widgetembed/?symbol=${encodeURIComponent(
     tvSymbol
-  )}&interval=${tvInterval}&theme=dark&style=1&timezone=Etc%2FUTC&hide_side_toolbar=0&allow_symbol_change=1&save_image=1&locale=en&studies=%5B%22STD%3APivot%2520Points%2520High%2520Low%22%2C%22STD%3AEMA%40tv-basicstudies%22%5D`;
+  )}&interval=${tvInterval}&theme=dark&style=1&timezone=Asia%2FKolkata&hide_side_toolbar=0&allow_symbol_change=1&save_image=1&locale=en`;
 
   return (
-    <div className="flex flex-col h-full bg-terminal-card border border-terminal-border rounded-lg overflow-hidden shadow-xl">
-      {/* Top Action & Indicator Header */}
-      <div className="flex flex-wrap items-center justify-between p-2 bg-[#0D121D] border-b border-terminal-border gap-2">
-        {/* Left: Market Mode & Asset Select */}
-        <div className="flex items-center gap-1.5 flex-wrap">
-          {/* Dedicated Indian Market Badge */}
-          <div className="flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-bold rounded bg-gradient-to-r from-amber-500/20 to-orange-500/20 text-amber-300 border border-amber-500/40 shadow-sm">
-            <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse"></span>
-            <span>🇮🇳 NSE F&O & MCX</span>
+    <div className="flex flex-col h-full bg-[#06060f] border border-[#1b1c2e] rounded-xl overflow-hidden shadow-2xl text-slate-200">
+      {/* 1. OPTIONALGO HEADER BAR */}
+      <div className="flex flex-wrap items-center justify-between px-3 py-2 bg-[#090814] border-b border-[#1b1c2e] gap-2.5">
+        {/* Left: Active Asset Selector & Live Spot */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-bold rounded-md bg-gradient-to-r from-amber-500/15 to-orange-500/15 text-amber-300 border border-amber-500/30">
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+            <span>INDIA DERIVATIVES</span>
           </div>
 
-          {/* Symbol Select Pills */}
-          <div className="flex items-center bg-terminal-bg rounded p-0.5 border border-terminal-border overflow-x-auto">
-            {currentAssets.map((item) => (
+          <div className="flex items-center bg-[#0d0c1d] rounded-lg p-0.5 border border-[#202138] overflow-x-auto">
+            {indianAssets.map((item) => (
               <button
                 key={item.sym}
                 onClick={() => onSelectSymbol(item.sym)}
-                className={`px-2 py-0.5 text-xs font-semibold rounded flex items-center gap-1 transition-all ${
+                className={`px-2.5 py-1 text-xs font-semibold rounded-md flex items-center gap-1.5 transition-all ${
                   activeSymbol === item.sym
                     ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/50 shadow-sm font-bold"
-                    : "text-terminal-muted hover:text-gray-200"
+                    : "text-slate-400 hover:text-white"
                 }`}
               >
                 <span>{item.label}</span>
-                <span className="text-[9px] px-1 py-0.2 rounded bg-black/40 text-terminal-muted border border-white/5">
+                <span className="text-[9px] px-1 py-0.2 rounded bg-black/50 text-slate-400 border border-white/5 font-mono">
                   {item.badge}
                 </span>
               </button>
             ))}
           </div>
 
-          <div className="hidden sm:flex items-center gap-2 pl-2 text-xs font-mono">
+          <div className="hidden xl:flex items-center gap-2 pl-2 text-xs font-mono">
             <div>
-              <span className="text-terminal-muted text-[10px]">BID: </span>
-              <span className="font-bold text-bull">{quote.bid}</span>
+              <span className="text-slate-500 text-[10px]">SPOT: </span>
+              <span className="font-bold text-emerald-400">₹{quote.bid}</span>
             </div>
-            <div>
-              <span className="text-terminal-muted text-[10px]">ASK: </span>
-              <span className="font-bold text-bear">{quote.ask}</span>
-            </div>
-            <div className="px-1.5 py-0.5 text-[10px] rounded bg-[#162032] text-terminal-muted border border-terminal-border">
+            <div className="px-1.5 py-0.5 text-[10px] rounded bg-[#131326] text-slate-400 border border-[#202138]">
               Spread: {quote.spread}
             </div>
-            <div className="hidden md:flex items-center gap-1.5 text-[10px] text-terminal-muted pl-1 border-l border-terminal-border/60">
+            <div className="flex items-center gap-1 text-[10px] text-slate-400 pl-1 border-l border-[#202138]">
               <span>24H:</span>
-              <span className="text-gray-300 font-bold">{quote.low24h}</span>
+              <span className="text-slate-200 font-bold">{quote.low24h}</span>
               <span>-</span>
-              <span className="text-gray-300 font-bold">{quote.high24h}</span>
+              <span className="text-slate-200 font-bold">{quote.high24h}</span>
             </div>
           </div>
         </div>
 
         {/* Center: Timeframe Pills */}
-        <div className="flex items-center bg-terminal-bg rounded p-0.5 border border-terminal-border">
+        <div className="flex items-center bg-[#0d0c1d] rounded-lg p-0.5 border border-[#202138]">
           {timeframes.map((tf) => (
             <button
               key={tf}
               onClick={() => onChangeTimeframe(tf)}
-              className={`px-2 py-0.5 text-xs font-mono font-medium rounded transition-all ${
+              className={`px-2.5 py-0.5 text-xs font-mono font-medium rounded-md transition-all ${
                 timeframe === tf
-                  ? "bg-accent/20 text-accent font-bold border border-accent/40"
-                  : "text-terminal-muted hover:text-gray-200"
+                  ? "bg-cyan-500/25 text-cyan-300 font-bold border border-cyan-500/40 shadow-sm"
+                  : "text-slate-400 hover:text-white"
               }`}
             >
               {tf.toUpperCase()}
@@ -876,388 +878,302 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
           ))}
         </div>
 
-        {/* Right: Mode Switcher & 1-Click AI Scan */}
-        <div className="flex items-center gap-1.5">
-          <div className="flex items-center bg-terminal-bg rounded p-0.5 border border-terminal-border text-xs">
+        {/* Right: Tri-Engine Toggle & AI Scan */}
+        <div className="flex items-center gap-2">
+          {/* Tri-Engine Switcher */}
+          <div className="flex items-center bg-[#0d0c1d] rounded-lg p-0.5 border border-[#202138] text-xs">
             <button
-              onClick={() => setChartMode("nse")}
-              className={`px-2.5 py-1 rounded flex items-center gap-1.5 font-bold transition-all ${
-                chartMode === "nse"
-                  ? "bg-amber-600 text-white shadow-sm"
-                  : "text-terminal-muted hover:text-white"
+              onClick={() => setChartEngine("tradingview")}
+              className={`px-2.5 py-1 rounded-md flex items-center gap-1.5 font-bold transition-all ${
+                chartEngine === "tradingview"
+                  ? "bg-blue-600/30 text-blue-300 border border-blue-500/50 shadow-sm"
+                  : "text-slate-400 hover:text-white"
               }`}
-              title="Official National Stock Exchange of India Technical Charting (charting.nseindia.com)"
+              title="Official TradingView Advanced Charting with Full Toolbars"
             >
-              <ExternalLink className="w-3.5 h-3.5 text-amber-300" />
-              <span>NSE India Chart (charting.nse.com)</span>
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              <Tv className="w-3.5 h-3.5 text-blue-400" />
+              <span>TradingView Pro</span>
             </button>
 
             <button
-              onClick={() => setChartMode("smart")}
-              className={`px-2.5 py-1 rounded flex items-center gap-1.5 font-bold transition-all ${
-                chartMode === "smart"
-                  ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-sm"
-                  : "text-terminal-muted hover:text-white"
+              onClick={() => setChartEngine("apex")}
+              className={`px-2.5 py-1 rounded-md flex items-center gap-1.5 font-bold transition-all ${
+                chartEngine === "apex"
+                  ? "bg-cyan-500/25 text-cyan-300 border border-cyan-500/50 shadow-sm"
+                  : "text-slate-400 hover:text-white"
               }`}
-              title="Apex PAVP Smart Chart (Real Exchange Candlesticks & Volume Profile)"
+              title="Apex Smart PAVP Canvas (Real Exchange Candles, Volume Profile & Auto-Signals)"
             >
               <Layers className="w-3.5 h-3.5 text-cyan-400" />
-              <span>Apex PAVP / SMC Chart</span>
+              <span>Apex PAVP</span>
+            </button>
+
+            <button
+              onClick={() => setChartEngine("nse")}
+              className={`px-2.5 py-1 rounded-md flex items-center gap-1.5 font-bold transition-all ${
+                chartEngine === "nse"
+                  ? "bg-amber-600/30 text-amber-300 border border-amber-500/50 shadow-sm"
+                  : "text-slate-400 hover:text-white"
+              }`}
+              title="Official National Stock Exchange of India Technical Charting"
+            >
+              <ExternalLink className="w-3.5 h-3.5 text-amber-400" />
+              <span>NSE Live</span>
             </button>
           </div>
 
           <button
             onClick={onAnalyzeLiveChart}
             disabled={isAnalyzing}
-            className="flex items-center gap-1.5 px-3 py-1 text-xs font-semibold rounded bg-gradient-to-r from-cyan-500 via-blue-600 to-indigo-600 hover:from-cyan-400 hover:to-indigo-500 text-white shadow-md shadow-cyan-500/20 transition-all border border-cyan-400/40 disabled:opacity-50"
+            className="flex items-center gap-1.5 px-3 py-1 text-xs font-semibold rounded-md bg-gradient-to-r from-cyan-500 via-blue-600 to-indigo-600 hover:from-cyan-400 hover:to-indigo-500 text-white shadow-md shadow-cyan-500/20 transition-all border border-cyan-400/40 disabled:opacity-50"
           >
             <Sparkles className={`w-3.5 h-3.5 text-yellow-300 ${isAnalyzing ? "animate-spin" : ""}`} />
-            <span>{isAnalyzing ? "Scanning..." : "Analyze Live Chart"}</span>
+            <span>{isAnalyzing ? "Scanning..." : "AI Live Scan"}</span>
           </button>
         </div>
       </div>
 
-      {/* Institutional SMC Intelligence Sub-bar (Always Visible for Both Modes) */}
-      <div className="flex flex-wrap items-center justify-between px-3 py-1.5 bg-[#090D15] border-b border-terminal-border text-xs font-mono gap-2">
-        {/* Left Side: Overlays (in Smart mode) or Real-Time Key Institutional Levels (in TradingView mode) */}
-        {chartMode === "smart" ? (
-          <div className="flex items-center gap-1 shrink-0 overflow-x-auto">
-            <span className="text-terminal-muted text-[10px] mr-1">OVERLAYS:</span>
-            
-            {/* EMA Toggle */}
+      {/* 2. OPTIONALGO OPTION STRIKE PICKER TOOLBAR (#oa-adv-toolbar) */}
+      <div className="flex flex-wrap items-center justify-between px-3 py-1.5 bg-[#080714] border-b border-[#1b1c2e] text-xs font-mono gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Underlying & Expiry */}
+          <div className="flex items-center gap-1.5 bg-[#121124] px-2 py-1 rounded-md border border-[#23233d]">
+            <span className="text-slate-400 text-[10px] font-bold">UNDERLYING:</span>
+            <span className="font-bold text-cyan-400">{activeSymbol}</span>
+            <span className="text-slate-300 font-bold">₹{quote.bid}</span>
+          </div>
+
+          {/* Expiry Selector */}
+          <div className="flex items-center gap-1 bg-[#121124] px-2 py-1 rounded-md border border-[#23233d]">
+            <span className="text-slate-400 text-[10px] font-bold">EXPIRY:</span>
+            <span className="font-bold text-amber-300">{selectedExpiry}</span>
+          </div>
+
+          {/* Strike Selector */}
+          <div className="flex items-center gap-1 bg-[#121124] px-2 py-1 rounded-md border border-[#23233d]">
+            <span className="text-slate-400 text-[10px] font-bold">STRIKE:</span>
+            <select
+              value={selectedStrike}
+              onChange={(e) => setSelectedStrike(Number(e.target.value))}
+              className="bg-transparent font-bold text-white text-xs outline-none cursor-pointer"
+            >
+              {optionChain.map((item) => (
+                <option key={item.strike} value={item.strike} className="bg-[#0b0b18] text-white">
+                  {item.strike} {item.isATM ? "(ATM)" : ""}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Call / Put Toggle */}
+          <div className="flex items-center bg-[#121124] rounded-md p-0.5 border border-[#23233d]">
             <button
-              onClick={() => setShowEMA(!showEMA)}
-              className={`px-2 py-0.5 rounded text-[10px] font-bold border transition-all ${
-                showEMA
-                  ? "bg-blue-500/20 text-cyan-300 border-cyan-500/40"
-                  : "bg-terminal-bg text-terminal-muted border-terminal-border"
+              onClick={() => setSelectedSide("CE")}
+              className={`px-2 py-0.5 rounded text-[11px] font-bold transition-all ${
+                selectedSide === "CE"
+                  ? "bg-emerald-500/25 text-emerald-400 border border-emerald-500/40 shadow-sm"
+                  : "text-slate-400 hover:text-white"
               }`}
             >
-              EMA 20/50
+              CALL (CE)
             </button>
-
-            {/* S/R Pivots */}
             <button
-              onClick={() => setShowSR(!showSR)}
-              className={`px-2 py-0.5 rounded text-[10px] font-bold border transition-all ${
-                showSR
-                  ? "bg-bull/20 text-bull border-bull/40"
-                  : "bg-terminal-bg text-terminal-muted border-terminal-border"
+              onClick={() => setSelectedSide("PE")}
+              className={`px-2 py-0.5 rounded text-[11px] font-bold transition-all ${
+                selectedSide === "PE"
+                  ? "bg-rose-500/25 text-rose-400 border border-rose-500/40 shadow-sm"
+                  : "text-slate-400 hover:text-white"
               }`}
             >
-              S / R
-            </button>
-
-            {/* P / D Zones */}
-            <button
-              onClick={() => setShowPD(!showPD)}
-              className={`px-2 py-0.5 rounded text-[10px] font-bold border transition-all ${
-                showPD
-                  ? "bg-cyan-500/20 text-cyan-300 border-cyan-500/40"
-                  : "bg-terminal-bg text-terminal-muted border-terminal-border"
-              }`}
-            >
-              50% Eq
-            </button>
-
-            {/* Fib Golden */}
-            <button
-              onClick={() => setShowFib(!showFib)}
-              className={`px-2 py-0.5 rounded text-[10px] font-bold border transition-all flex items-center gap-1 ${
-                showFib
-                  ? "bg-gold/20 text-gold border-gold/40"
-                  : "bg-terminal-bg text-terminal-muted border-terminal-border"
-              }`}
-            >
-              <Percent className="w-2.5 h-2.5" />
-              <span>Fib 0.618</span>
-            </button>
-
-            {/* Order Blocks */}
-            <button
-              onClick={() => setShowOB(!showOB)}
-              className={`px-2 py-0.5 rounded text-[10px] font-bold border transition-all flex items-center gap-1 ${
-                showOB
-                  ? "bg-bull-glow text-bull border-bull/40"
-                  : "bg-terminal-bg text-terminal-muted border-terminal-border"
-              }`}
-            >
-              <Box className="w-2.5 h-2.5" />
-              <span>Order Block</span>
-            </button>
-
-            {/* Volume Profile (PAVP: VAH, VAL, POC) */}
-            <button
-              onClick={() => setShowVP(!showVP)}
-              className={`px-2 py-0.5 rounded text-[10px] font-bold border transition-all flex items-center gap-1 ${
-                showVP
-                  ? "bg-rose-500/20 text-rose-300 border-rose-500/40 shadow-sm"
-                  : "bg-terminal-bg text-terminal-muted border-terminal-border"
-              }`}
-              title="Toggle Pivot-Anchored Volume Profile (POC Red, VAH Blue, VAL Blue, Anchor Purple)"
-            >
-              <BarChart2 className="w-2.5 h-2.5 text-rose-400" />
-              <span>PAVP (POC/VAH/VAL)</span>
-            </button>
-
-            {/* In-Chart Buy / Sell Directional Signals (Strictly Volume Profile) */}
-            <button
-              onClick={() => setShowSignals(!showSignals)}
-              className={`px-2 py-0.5 rounded text-[10px] font-bold border transition-all flex items-center gap-1 ${
-                showSignals
-                  ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40 shadow-sm"
-                  : "bg-terminal-bg text-terminal-muted border-terminal-border"
-              }`}
-              title="Toggle Strictly Volume Profile Signals (BUY CE @ VAL, BUY PE @ VAH, Retest @ POC)"
-            >
-              <TrendingUp className="w-2.5 h-2.5 text-emerald-400" />
-              <span>VP Signals (CE/PE)</span>
-            </button>
-
-            {/* VWCB (Volume Weighted Colored Bars) */}
-            <button
-              onClick={() => setShowVWCB(!showVWCB)}
-              className={`px-2 py-0.5 rounded text-[10px] font-bold border transition-all flex items-center gap-1 ${
-                showVWCB
-                  ? "bg-orange-500/20 text-orange-300 border-orange-500/40 shadow-sm"
-                  : "bg-terminal-bg text-terminal-muted border-terminal-border"
-              }`}
-              title="Toggle Volume Weighted Colored Bars (dgtrd VWCB: vol > 89 SMA * 1.618)"
-            >
-              <Flame className="w-2.5 h-2.5 text-orange-400" />
-              <span>VWCB Spikes</span>
-            </button>
-
-            {/* PAVP Volume Profile Toggle */}
-            <button
-              onClick={() => setShowVP(!showVP)}
-              className={`px-2 py-0.5 rounded text-[10px] font-bold border transition-all flex items-center gap-1 ${
-                showVP
-                  ? "bg-purple-500/20 text-purple-300 border-purple-500/40 shadow-sm"
-                  : "bg-terminal-bg text-terminal-muted border-terminal-border"
-              }`}
-              title="Toggle Pivot-Anchored Volume Profile & Value Area Overlay"
-            >
-              <Anchor className="w-2.5 h-2.5 text-purple-400" />
-              <span>PAVP Profile</span>
-            </button>
-
-            {/* PDH / PDL Toggle */}
-            <button
-              onClick={() => setShowPDHL(!showPDHL)}
-              className={`px-2 py-0.5 rounded text-[10px] font-bold border transition-all flex items-center gap-1 ${
-                showPDHL
-                  ? "bg-amber-500/20 text-amber-300 border-amber-500/40 shadow-sm"
-                  : "bg-terminal-bg text-terminal-muted border-terminal-border"
-              }`}
-              title="Toggle Previous Day High & Previous Day Low Key Liquidity Levels"
-            >
-              <Target className="w-2.5 h-2.5 text-amber-400" />
-              <span>PDH / PDL</span>
-            </button>
-
-            {/* Opening Range Breakout (ORB) Toggle */}
-            <button
-              onClick={() => setShowORB(!showORB)}
-              className={`px-2 py-0.5 rounded text-[10px] font-bold border transition-all flex items-center gap-1 ${
-                showORB
-                  ? "bg-cyan-500/20 text-cyan-300 border-cyan-500/40 shadow-sm"
-                  : "bg-terminal-bg text-terminal-muted border-terminal-border"
-              }`}
-              title="Toggle Opening Range Breakout High & Low (15M Session Range)"
-            >
-              <Clock className="w-2.5 h-2.5 text-cyan-400" />
-              <span>ORB</span>
-            </button>
-
-            {/* Asian Session Range Toggle */}
-            <button
-              onClick={() => setShowAsia(!showAsia)}
-              className={`px-2 py-0.5 rounded text-[10px] font-bold border transition-all flex items-center gap-1 ${
-                showAsia
-                  ? "bg-indigo-500/20 text-indigo-300 border-indigo-500/40 shadow-sm"
-                  : "bg-terminal-bg text-terminal-muted border-terminal-border"
-              }`}
-              title="Toggle Asian Session High & Low Range"
-            >
-              <Compass className="w-2.5 h-2.5 text-indigo-400" />
-              <span>Asia H/L</span>
-            </button>
-
-            {/* Daily Open (DO) Toggle */}
-            <button
-              onClick={() => setShowDO(!showDO)}
-              className={`px-2 py-0.5 rounded text-[10px] font-bold border transition-all flex items-center gap-1 ${
-                showDO
-                  ? "bg-yellow-500/20 text-yellow-300 border-yellow-500/40 shadow-sm"
-                  : "bg-terminal-bg text-terminal-muted border-terminal-border"
-              }`}
-              title="Toggle Daily Open Baseline (Above DO = Longs in Premium, Below DO = Shorts in Discount)"
-            >
-              <span className="w-1.5 h-1.5 rounded-full bg-yellow-400"></span>
-              <span>Daily Open</span>
-            </button>
-
-            {/* Reset clean button */}
-            <button
-              onClick={resetOverlays}
-              className="px-1.5 py-0.5 rounded text-[10px] text-gray-400 hover:text-white bg-terminal-bg hover:bg-terminal-hover border border-terminal-border flex items-center gap-0.5"
-              title="Reset to clean view"
-            >
-              <RotateCcw className="w-2.5 h-2.5" />
-              <span>Reset</span>
+              PUT (PE)
             </button>
           </div>
-        ) : (
-          <div className="flex items-center gap-1.5 overflow-x-auto shrink-0 py-0.5">
-            <span className="text-terminal-muted text-[10px] mr-0.5 font-bold flex items-center gap-1">
-              <ShieldCheck className="w-3 h-3 text-cyan-400" />
-              SMC OVERLAYS:
-            </span>
 
-            {/* 50% Eq Pill */}
-            {smc && (
-              <button
-                onClick={() => copyToClipboard(smc.equilibriumPrice.toString(), "50% EQ")}
-                className="px-2 py-0.5 rounded bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/30 text-[10px] text-cyan-300 flex items-center gap-1 transition-all"
-                title="Click to copy 50% Equilibrium price"
-              >
-                <span className="text-gray-400">50% EQ:</span>
-                <span className="font-bold">{smc.equilibriumPrice}</span>
-                {copiedLevel === "50% EQ" ? (
-                  <Check className="w-2.5 h-2.5 text-bull" />
-                ) : (
-                  <Copy className="w-2.5 h-2.5 text-cyan-400/70" />
-                )}
-              </button>
-            )}
-
-            {/* Fib 0.618 Golden Pocket Pill */}
-            {smc && (
-              <button
-                onClick={() => copyToClipboard(smc.fibonacci.fib618.toString(), "0.618 FIB")}
-                className="px-2 py-0.5 rounded bg-gold/10 hover:bg-gold/20 border border-gold/30 text-[10px] text-gold flex items-center gap-1 transition-all"
-                title="Click to copy 0.618 Golden Pocket level"
-              >
-                <span className="text-gray-400">0.618 FIB:</span>
-                <span className="font-bold">{smc.fibonacci.fib618}</span>
-                {copiedLevel === "0.618 FIB" ? (
-                  <Check className="w-2.5 h-2.5 text-bull" />
-                ) : (
-                  <Copy className="w-2.5 h-2.5 text-gold/70" />
-                )}
-              </button>
-            )}
-
-            {/* 0.786 OTE Pill */}
-            {smc && smc.fibonacci.fib786 && (
-              <button
-                onClick={() => copyToClipboard(smc.fibonacci.fib786.toString(), "0.786 OTE")}
-                className="hidden sm:flex px-2 py-0.5 rounded bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/30 text-[10px] text-indigo-300 items-center gap-1 transition-all"
-                title="Optimal Trade Entry (0.786)"
-              >
-                <span className="text-gray-400">0.786 OTE:</span>
-                <span className="font-bold">{smc.fibonacci.fib786}</span>
-                {copiedLevel === "0.786 OTE" ? (
-                  <Check className="w-2.5 h-2.5 text-bull" />
-                ) : (
-                  <Copy className="w-2.5 h-2.5 text-indigo-400/70" />
-                )}
-              </button>
-            )}
-
-            {/* Active Demand OB Pill */}
-            {smc && smc.orderBlocks.length > 0 && (
-              <button
-                onClick={() => {
-                  const ob = smc.orderBlocks[smc.orderBlocks.length - 1];
-                  copyToClipboard(ob.low.toString(), "OB");
-                }}
-                className="px-2 py-0.5 rounded bg-bull/10 hover:bg-bull/20 border border-bull/30 text-[10px] text-bull flex items-center gap-1 transition-all"
-                title="Click to copy Order Block level"
-              >
-                <span className="text-gray-400">ACTIVE OB:</span>
-                <span className="font-bold">{smc.orderBlocks[smc.orderBlocks.length - 1].low}</span>
-                {copiedLevel === "OB" ? (
-                  <Check className="w-2.5 h-2.5 text-bull" />
-                ) : (
-                  <Copy className="w-2.5 h-2.5 text-bull/70" />
-                )}
-              </button>
-            )}
-
-            {/* Toggle Level Radar Drawer */}
-            <button
-              onClick={() => setShowLevelDrawer(!showLevelDrawer)}
-              className={`px-2 py-0.5 rounded text-[10px] font-bold border transition-all flex items-center gap-1 ${
-                showLevelDrawer
-                  ? "bg-accent/20 text-accent border-accent/40 shadow-sm"
-                  : "bg-terminal-bg text-terminal-muted hover:text-white border-terminal-border"
-              }`}
-              title="Toggle SMC Level Matrix Overlay"
-            >
-              <Layers className="w-2.5 h-2.5" />
-              <span>{showLevelDrawer ? "Hide Radar" : "SMC Matrix"}</span>
-            </button>
-          </div>
-        )}
-
-        {/* Right Side: ICT Zone + Confluence + Copy All */}
-        <div className="flex items-center gap-2 text-[11px] shrink-0">
-          {smc && (
-            <div className="flex items-center gap-1.5">
-              <span className="text-terminal-muted hidden md:inline text-[10px]">ICT REGIME:</span>
-              <span
-                className={`px-2 py-0.5 rounded font-bold uppercase text-[10px] tracking-wide border ${
-                  smc.zone === "Discount"
-                    ? "bg-bull-glow text-bull border-bull/40 shadow-[0_0_8px_rgba(0,230,118,0.2)]"
-                    : smc.zone === "Premium"
-                    ? "bg-bear-glow text-bear border border-bear/40 shadow-[0_0_8px_rgba(255,59,48,0.2)]"
-                    : "bg-cyan-500/20 text-cyan-300 border border-cyan-500/40"
-                }`}
-              >
-                {smc.zone === "Discount"
-                  ? "🟢 DISCOUNT (BUY)"
-                  : smc.zone === "Premium"
-                  ? "🔴 PREMIUM (SELL)"
-                  : "⚪ EQUILIBRIUM"}
-              </span>
+          {/* Estimated Premium & Greeks */}
+          <div className="hidden sm:flex items-center gap-2 bg-[#121124] px-2.5 py-1 rounded-md border border-[#23233d]">
+            <div>
+              <span className="text-slate-400 text-[10px]">PREMIUM: </span>
+              <span className="font-bold text-white">₹{currentContract.premiumAsk.toFixed(2)}</span>
             </div>
+            <div className="text-[10px] text-slate-400 pl-1 border-l border-[#2b2b48]">
+              <span>Δ {currentContract.delta}</span>
+              <span className="mx-1 text-slate-600">•</span>
+              <span>θ {currentContract.theta}</span>
+              <span className="mx-1 text-slate-600">•</span>
+              <span>IV {currentContract.iv}%</span>
+            </div>
+          </div>
+        </div>
+
+        {/* 1-Click Buy 1 Lot Button */}
+        <div className="flex items-center gap-2">
+          {tradeSuccessMsg && (
+            <span className="text-[11px] font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/30 animate-pulse">
+              {tradeSuccessMsg}
+            </span>
           )}
 
-          {/* Quick Copy All Levels Button */}
-          {smc && (
-            <button
-              onClick={() => {
-                const text = `ApexFX ${activeSymbol} Institutional Levels:\n- Current Bid: ${quote.bid}\n- PDH (Previous Day High): ${sessionLevels.pdh}\n- PDL (Previous Day Low): ${sessionLevels.pdl}\n- ORB High: ${sessionLevels.orbHigh}\n- ORB Low: ${sessionLevels.orbLow}\n- Daily Open: ${sessionLevels.dailyOpen}\n- Volume Profile POC: ${pavp.poc}\n- VAH (68%): ${pavp.vah}\n- VAL (68%): ${pavp.val}\n- 50% Equilibrium: ${smc.equilibriumPrice}\n- ICT Regime: ${smc.zone}`;
-                copyToClipboard(text, "ALL");
-              }}
-              className="px-2 py-0.5 rounded bg-terminal-card hover:bg-terminal-hover border border-terminal-border text-[10px] text-gray-300 hover:text-white flex items-center gap-1 transition-all"
-              title="Copy all institutional coordinates for pending orders"
-            >
-              {copiedLevel === "ALL" ? (
-                <>
-                  <Check className="w-2.5 h-2.5 text-bull" />
-                  <span className="text-bull font-bold">Copied!</span>
-                </>
-              ) : (
-                <>
-                  <Copy className="w-2.5 h-2.5 text-cyan-400" />
-                  <span className="hidden sm:inline">Copy Levels</span>
-                </>
-              )}
-            </button>
-          )}
+          <button
+            onClick={() => handleQuickTrade(currentContract, "BUY")}
+            className="flex items-center gap-1.5 px-3 py-1 rounded-md bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs shadow-md shadow-emerald-600/20 border border-emerald-400/40 transition-all cursor-pointer"
+            title={`Instantly execute 1 Lot (${currentContract.lotSize} Qty) in Demo Account with live Telegram alert`}
+          >
+            <Zap className="w-3.5 h-3.5 text-yellow-300" />
+            <span>
+              Buy 1 Lot ({spec.lotSize} Qty) @ ₹{currentContract.premiumAsk.toFixed(2)}
+            </span>
+          </button>
         </div>
       </div>
 
-      {/* Main Chart Container */}
-      <div className="relative flex-1 min-h-[460px] w-full bg-[#0B0E14]">
-        {chartMode === "nse" ? (
-          <div className="relative w-full h-full min-h-[500px] flex flex-col bg-[#0A0E17]">
+      {/* 3. OPTIONALGO INSTITUTIONAL OVERLAYS STRIP */}
+      <div className="flex flex-wrap items-center justify-between px-3 py-1 bg-[#090814] border-b border-[#1b1c2e] text-[11px] font-mono gap-1.5">
+        <div className="flex items-center gap-1.5 overflow-x-auto shrink-0 py-0.5">
+          <span className="text-slate-500 text-[10px] mr-1 font-bold">OVERLAYS:</span>
+
+          {/* Gamma Walls Toggle */}
+          <button
+            onClick={() => setShowWalls(!showWalls)}
+            className={`px-2 py-0.5 rounded text-[10px] font-bold border transition-all flex items-center gap-1.5 ${
+              showWalls
+                ? "bg-amber-500/15 text-amber-300 border-amber-500/40 shadow-sm"
+                : "bg-[#111022] text-slate-400 border-[#202138]"
+            }`}
+            title="Toggle Gamma Walls (Call Wall, Put Wall, Max Pain Strike)"
+          >
+            <span className="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+            <span>Walls / Pain</span>
+          </button>
+
+          {/* CPR (Central Pivot Range) */}
+          <button
+            onClick={() => setShowSR(!showSR)}
+            className={`px-2 py-0.5 rounded text-[10px] font-bold border transition-all flex items-center gap-1.5 ${
+              showSR
+                ? "bg-purple-500/15 text-purple-300 border-purple-500/40 shadow-sm"
+                : "bg-[#111022] text-slate-400 border-[#202138]"
+            }`}
+            title="Toggle Central Pivot Range (TC, Pivot, BC)"
+          >
+            <span className="w-1.5 h-1.5 rounded-full bg-purple-400"></span>
+            <span>CPR & Pivots</span>
+          </button>
+
+          {/* Previous Day High & Low */}
+          <button
+            onClick={() => setShowPDHL(!showPDHL)}
+            className={`px-2 py-0.5 rounded text-[10px] font-bold border transition-all flex items-center gap-1.5 ${
+              showPDHL
+                ? "bg-orange-500/15 text-orange-300 border-orange-500/40 shadow-sm"
+                : "bg-[#111022] text-slate-400 border-[#202138]"
+            }`}
+            title="Toggle Previous Day High (PDH) & Low (PDL)"
+          >
+            <span className="w-1.5 h-1.5 rounded-full bg-orange-400"></span>
+            <span>Prev Day</span>
+          </button>
+
+          {/* OBR (Opening Bar Range) */}
+          <button
+            onClick={() => setShowORB(!showORB)}
+            className={`px-2 py-0.5 rounded text-[10px] font-bold border transition-all flex items-center gap-1.5 ${
+              showORB
+                ? "bg-cyan-500/15 text-cyan-300 border-cyan-500/40 shadow-sm"
+                : "bg-[#111022] text-slate-400 border-[#202138]"
+            }`}
+            title="Toggle Opening Bar Range (ORB 15M High & Low)"
+          >
+            <span className="w-1.5 h-1.5 rounded-full bg-cyan-400"></span>
+            <span>OBR (15m)</span>
+          </button>
+
+          {/* Pivot-Anchored Volume Profile */}
+          <button
+            onClick={() => setShowVP(!showVP)}
+            className={`px-2 py-0.5 rounded text-[10px] font-bold border transition-all flex items-center gap-1.5 ${
+              showVP
+                ? "bg-rose-500/15 text-rose-300 border-rose-500/40 shadow-sm"
+                : "bg-[#111022] text-slate-400 border-[#202138]"
+            }`}
+            title="Toggle Pivot-Anchored Volume Profile (POC Red, VAH Blue, VAL Blue)"
+          >
+            <span className="w-1.5 h-1.5 rounded-full bg-rose-400"></span>
+            <span>PAVP (POC/VAH/VAL)</span>
+          </button>
+
+          {/* VWAP & EMAs */}
+          <button
+            onClick={() => setShowEMA(!showEMA)}
+            className={`px-2 py-0.5 rounded text-[10px] font-bold border transition-all flex items-center gap-1.5 ${
+              showEMA
+                ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/40 shadow-sm"
+                : "bg-[#111022] text-slate-400 border-[#202138]"
+            }`}
+            title="Toggle Exponential Moving Averages (EMA 20 & 50)"
+          >
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+            <span>EMAs</span>
+          </button>
+
+          {/* Expected Move Cone */}
+          <button
+            onClick={() => setShowEMCone(!showEMCone)}
+            className={`px-2 py-0.5 rounded text-[10px] font-bold border transition-all flex items-center gap-1.5 ${
+              showEMCone
+                ? "bg-slate-300/15 text-slate-200 border-slate-400/40 shadow-sm"
+                : "bg-[#111022] text-slate-400 border-[#202138]"
+            }`}
+            title="Toggle IV-Derived Expected Move Range Cone"
+          >
+            <span className="w-1.5 h-1.5 rounded-full bg-slate-300"></span>
+            <span>EM Cone (±{optionIntel.expectedMove})</span>
+          </button>
+
+          {/* Reset View */}
+          <button
+            onClick={resetOverlays}
+            className="px-2 py-0.5 rounded text-[10px] text-slate-400 hover:text-white bg-[#111022] hover:bg-[#1a1930] border border-[#202138] flex items-center gap-1"
+            title="Reset to clean OptionAlgo view"
+          >
+            <RotateCcw className="w-2.5 h-2.5" />
+            <span>Reset</span>
+          </button>
+        </div>
+
+        {/* Right Info: Max Pain & PCR */}
+        <div className="flex items-center gap-3 text-[10px] shrink-0 text-slate-400">
+          <div>
+            <span>MAX PAIN: </span>
+            <span className="font-bold text-purple-300">{optionIntel.maxPain}</span>
+          </div>
+          <div>
+            <span>PCR: </span>
+            <span
+              className={`font-bold ${
+                optionIntel.pcr >= 1.0 ? "text-emerald-400" : "text-rose-400"
+              }`}
+            >
+              {optionIntel.pcr} ({optionIntel.pcr >= 1.0 ? "Bullish" : "Bearish"})
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* 4. MAIN CHART CANVAS CONTAINER */}
+      <div className="relative flex-1 min-h-[480px] w-full bg-[#06060f]">
+        {chartEngine === "tradingview" ? (
+          <div className="relative w-full h-full min-h-[480px] bg-[#06060f]">
+            <iframe
+              src={tvEmbedUrl}
+              title={`TradingView Advanced Chart - ${activeSymbol}`}
+              className="w-full h-full min-h-[480px] border-0 bg-[#06060f]"
+              allow="fullscreen"
+            />
+          </div>
+        ) : chartEngine === "nse" ? (
+          <div className="relative w-full h-full min-h-[480px] flex flex-col bg-[#0A0E17]">
             {/* Top NSE Gateway Header */}
-            <div className="flex flex-wrap items-center justify-between p-3 bg-[#0F1420] border-b border-terminal-border gap-2">
+            <div className="flex flex-wrap items-center justify-between p-2.5 bg-[#0F1420] border-b border-[#202138] gap-2">
               <div className="flex items-center gap-2">
                 <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
                 <span className="text-xs font-bold text-white tracking-wide">
@@ -1270,11 +1186,11 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
 
               <div className="flex items-center gap-2">
                 <button
-                  onClick={() => setChartMode("smart")}
+                  onClick={() => setChartEngine("apex")}
                   className="px-3 py-1 rounded bg-cyan-600/20 hover:bg-cyan-600/30 text-cyan-300 font-bold text-xs border border-cyan-500/40 transition-all flex items-center gap-1.5"
                 >
                   <Layers className="w-3.5 h-3.5" />
-                  <span>Switch to Apex PAVP Canvas</span>
+                  <span>Switch to Apex PAVP</span>
                 </button>
 
                 <button
@@ -1288,44 +1204,20 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
               </div>
             </div>
 
-            {/* Quick Symbol Switch Bar */}
-            <div className="flex items-center gap-2 px-3 py-1.5 bg-[#0D121D] border-b border-terminal-border/60 text-[11px] overflow-x-auto">
-              <span className="text-terminal-muted font-bold">NSE F&O Symbols:</span>
-              {[
-                { name: "NIFTY 50", sym: "NIFTY" },
-                { name: "NIFTY BANK", sym: "BANKNIFTY" },
-                { name: "FINNIFTY", sym: "FINNIFTY" },
-                { name: "SENSEX", sym: "SENSEX" },
-                { name: "MCX CRUDE OIL", sym: "CRUDEOIL" },
-                { name: "MCX NATURAL GAS", sym: "NATURALGAS" },
-              ].map((item) => (
-                <button
-                  key={item.sym}
-                  onClick={() => onSelectSymbol(item.sym as AssetSymbol)}
-                  className={`px-2 py-0.5 rounded font-mono font-bold transition-all border ${
-                    activeSymbol === item.sym
-                      ? "bg-amber-500/20 text-amber-300 border-amber-500/50"
-                      : "bg-terminal-bg text-gray-300 hover:text-white border-terminal-border"
-                  }`}
-                >
-                  {item.name}
-                </button>
-              ))}
-            </div>
-
             {/* Direct Embedded NSE Live Chart */}
-            <div className="relative flex-1 w-full min-h-[520px] bg-[#0A0E17]">
+            <div className="relative flex-1 w-full min-h-[480px] bg-[#0A0E17]">
               <iframe
                 src="/api/nse-chart"
-                className="w-full h-full min-h-[520px] border-none bg-[#0A0E17]"
+                className="w-full h-full min-h-[480px] border-none bg-[#0A0E17]"
                 title="NSE Official Technical Charting"
                 allow="fullscreen"
               />
             </div>
           </div>
         ) : (
+          /* Apex Smart PAVP Canvas */
           <>
-            <div ref={chartContainerRef} className="w-full h-full min-h-[460px]" />
+            <div ref={chartContainerRef} className="w-full h-full min-h-[480px]" />
 
             {/* TradingView dgtrd Pivot-Anchored Volume Profile & Value Area SVG Overlay */}
             {showVP && overlayCoords && overlayCoords.anchorX !== null && (
@@ -1339,7 +1231,6 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
                   overlayCoords.anchorX !== null &&
                   overlayCoords.latestX !== null && (
                     <g className="va-box">
-                      {/* Translucent Value Area Background */}
                       <rect
                         x={Math.max(0, overlayCoords.anchorX)}
                         y={Math.min(overlayCoords.vahY, overlayCoords.valY)}
@@ -1349,7 +1240,6 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
                         stroke="rgba(37, 99, 235, 0.25)"
                         strokeWidth="1"
                       />
-                      {/* Top VAH Blue Line (Matching TradingView dgtrd #2962ff) */}
                       <line
                         x1={Math.max(0, overlayCoords.anchorX)}
                         y1={overlayCoords.vahY}
@@ -1358,7 +1248,6 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
                         stroke="#2563EB"
                         strokeWidth={2}
                       />
-                      {/* Bottom VAL Blue Line (Matching TradingView dgtrd #2962ff) */}
                       <line
                         x1={Math.max(0, overlayCoords.anchorX)}
                         y1={overlayCoords.valY}
@@ -1389,12 +1278,8 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
                   if (row.y < -50 || row.y > 2000) return null;
                   const startX = Math.max(0, overlayCoords.anchorX || 0);
                   const barY = row.y - row.height / 2;
-                  const barFill = row.isPOC
-                    ? "#EF4444"
-                    : row.isValueArea
-                    ? "#38BDF8"
-                    : "#475569";
-                  const barOpacity = row.isPOC ? 0.95 : row.isValueArea ? 0.80 : 0.35;
+                  const barFill = row.isPOC ? "#EF4444" : row.isValueArea ? "#38BDF8" : "#475569";
+                  const barOpacity = row.isPOC ? 0.95 : row.isValueArea ? 0.8 : 0.35;
 
                   return (
                     <g key={idx} className="vp-bar">
@@ -1421,7 +1306,7 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
                   );
                 })}
 
-                {/* 3. Anchor Pivot Tag (TradingView dgtrd style: e.g. 8529 ↓ %14.2 \n 58.27K Vol) */}
+                {/* 3. Anchor Pivot Tag */}
                 {overlayCoords.pivot &&
                   overlayCoords.anchorX !== null &&
                   overlayCoords.anchorPriceY !== null &&
@@ -1456,8 +1341,7 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
                         fontWeight="bold"
                         fontFamily="monospace"
                       >
-                        {overlayCoords.pivot.price}{" "}
-                        {overlayCoords.pivot.type === "low" ? "↓" : "↑"}
+                        {overlayCoords.pivot.price} {overlayCoords.pivot.type === "low" ? "↓" : "↑"}
                         {overlayCoords.pivot.changePercent != null
                           ? ` %${Math.abs(overlayCoords.pivot.changePercent).toFixed(1)}`
                           : ""}
@@ -1471,7 +1355,11 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
                         fontFamily="monospace"
                       >
                         {overlayCoords.pivot.volume
-                          ? `${overlayCoords.pivot.volume > 1000 ? (overlayCoords.pivot.volume / 1000).toFixed(1) + "K" : overlayCoords.pivot.volume} Vol`
+                          ? `${
+                              overlayCoords.pivot.volume > 1000
+                                ? (overlayCoords.pivot.volume / 1000).toFixed(1) + "K"
+                                : overlayCoords.pivot.volume
+                            } Vol`
                           : "PIVOT"}
                       </text>
                     </g>
@@ -1480,128 +1368,393 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
             )}
 
             {/* Clean Top Legend Overlay */}
-            <div className="absolute top-3 left-3 pointer-events-none flex flex-wrap items-center gap-2 text-[11px] font-mono bg-terminal-bg/90 backdrop-blur px-2.5 py-1.5 rounded border border-terminal-border/80 z-20 shadow-lg">
+            <div className="absolute top-2.5 left-2.5 pointer-events-none flex flex-wrap items-center gap-2 text-[10px] font-mono bg-[#0b0a1a]/85 backdrop-blur px-2.5 py-1.5 rounded-md border border-[#202138] z-20 shadow-md">
               <div className="flex items-center gap-1.5">
                 <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
                 <span className="font-bold text-white">{activeSymbol}</span>
-                <span className="text-terminal-muted">[{timeframe.toUpperCase()}]</span>
-              </div>
-
-              <div className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[10px] font-bold">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-live-pulse"></span>
-                <span>REALTIME</span>
+                <span className="text-slate-400">[{timeframe.toUpperCase()}]</span>
               </div>
 
               {showVP && pavp && pavp.poc > 0 && (
                 <>
-                  <div className="flex items-center gap-1 text-[10px]">
+                  <div className="flex items-center gap-1">
                     <span className="w-2 h-0.5 bg-[#EF4444]"></span>
                     <span className="text-[#EF4444] font-bold">POC: {pavp.poc}</span>
                   </div>
-                  <div className="flex items-center gap-1 text-[10px]">
+                  <div className="flex items-center gap-1">
                     <span className="w-2 h-0.5 bg-[#2563EB]"></span>
                     <span className="text-[#2563EB] font-bold">VAH: {pavp.vah}</span>
                   </div>
-                  <div className="flex items-center gap-1 text-[10px]">
+                  <div className="flex items-center gap-1">
                     <span className="w-2 h-0.5 bg-[#2563EB]"></span>
                     <span className="text-[#2563EB] font-bold">VAL: {pavp.val}</span>
                   </div>
                 </>
               )}
 
-              {showPDHL && sessionLevels && sessionLevels.pdh > 0 && (
-                <>
-                  <div className="flex items-center gap-1 text-[10px]">
-                    <span className="w-2 h-0.5 bg-[#F59E0B]"></span>
-                    <span className="text-[#F59E0B] font-bold">PDH: {sessionLevels.pdh}</span>
-                  </div>
-                  <div className="flex items-center gap-1 text-[10px]">
-                    <span className="w-2 h-0.5 bg-[#A855F7]"></span>
-                    <span className="text-[#A855F7] font-bold">PDL: {sessionLevels.pdl}</span>
-                  </div>
-                </>
-              )}
-
-              {showORB && sessionLevels && sessionLevels.orbHigh > 0 && (
-                <>
-                  <div className="flex items-center gap-1 text-[10px]">
-                    <span className="w-2 h-0.5 bg-[#06B6D4]"></span>
-                    <span className="text-[#06B6D4] font-bold">ORB-H: {sessionLevels.orbHigh}</span>
-                  </div>
-                  <div className="flex items-center gap-1 text-[10px]">
-                    <span className="w-2 h-0.5 bg-[#FB923C]"></span>
-                    <span className="text-[#FB923C] font-bold">ORB-L: {sessionLevels.orbLow}</span>
-                  </div>
-                </>
-              )}
-
-              {showEMA && (
-                <>
-                  <div className="flex items-center gap-1 text-[10px]">
-                    <span className="w-2 h-0.5 bg-[#38BDF8]"></span>
-                    <span className="text-[#38BDF8]">EMA20: {technicals.ema20}</span>
-                  </div>
-                  <div className="flex items-center gap-1 text-[10px]">
-                    <span className="w-2 h-0.5 bg-[#F59E0B]"></span>
-                    <span className="text-[#F59E0B]">EMA50: {technicals.ema50}</span>
-                  </div>
-                </>
+              {showWalls && optionIntel && (
+                <div className="flex items-center gap-1">
+                  <span className="w-2 h-0.5 bg-amber-400"></span>
+                  <span className="text-amber-300 font-bold">Wall: {optionIntel.callWall}</span>
+                </div>
               )}
             </div>
-
-            {/* Minimalist Floating HUD at bottom */}
-            {smc && (
-              <div className="absolute bottom-3 left-3 pointer-events-none hidden md:flex items-center gap-3 text-[10px] font-mono bg-terminal-bg/95 backdrop-blur px-3 py-1.5 rounded border border-terminal-border/80 shadow-lg z-20">
-                <div className="flex items-center gap-1">
-                  <span className="text-terminal-muted">50% EQ:</span>
-                  <span className="text-cyan-400 font-bold">{smc.equilibriumPrice}</span>
-                </div>
-                {sessionLevels && sessionLevels.pdh > 0 && (
-                  <>
-                    <div className="flex items-center gap-1">
-                      <span className="text-terminal-muted">PDH:</span>
-                      <span className="text-amber-400 font-bold">{sessionLevels.pdh}</span>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <span className="text-terminal-muted">PDL:</span>
-                      <span className="text-purple-400 font-bold">{sessionLevels.pdl}</span>
-                    </div>
-                  </>
-                )}
-                {pavp && pavp.poc > 0 && (
-                  <div className="flex items-center gap-1">
-                    <span className="text-terminal-muted">POC:</span>
-                    <span className="text-[#F43F5E] font-bold">{pavp.poc}</span>
-                  </div>
-                )}
-              </div>
-            )}
           </>
         )}
       </div>
 
-      {/* Optional RSI Sub-Panel */}
-      {chartMode === "smart" && showRSI && (
-        <div className="flex items-center justify-between px-3 py-1.5 bg-[#090C12] border-t border-terminal-border text-xs font-mono">
-          <div className="flex items-center gap-3">
-            <span className="text-terminal-muted font-bold">RSI (14):</span>
-            <span
-              className={`font-bold ${
-                technicals.rsi >= 70
-                  ? "text-bear"
-                  : technicals.rsi <= 30
-                  ? "text-bull"
-                  : "text-accent"
+      {/* 5. OPTIONALGO DATA INTELLIGENCE SUBTABS SECTION */}
+      <div className="bg-[#080714] border-t border-[#1b1c2e] flex flex-col">
+        {/* Subtabs Header */}
+        <div className="flex items-center justify-between px-3 py-1.5 bg-[#0a0918] border-b border-[#1b1c2e] overflow-x-auto text-xs">
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setActiveSubtab("chain")}
+              className={`px-3 py-1 rounded-md font-bold transition-all flex items-center gap-1.5 ${
+                activeSubtab === "chain"
+                  ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-sm"
+                  : "text-slate-400 hover:text-white"
               }`}
             >
-              {technicals.rsi}
-            </span>
+              <Zap className="w-3.5 h-3.5 text-cyan-400" />
+              <span>Option Chain</span>
+            </button>
+
+            <button
+              onClick={() => setActiveSubtab("oigex")}
+              className={`px-3 py-1 rounded-md font-bold transition-all flex items-center gap-1.5 ${
+                activeSubtab === "oigex"
+                  ? "bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-sm"
+                  : "text-slate-400 hover:text-white"
+              }`}
+            >
+              <BarChart2 className="w-3.5 h-3.5 text-amber-400" />
+              <span>OI & GEX Profile</span>
+            </button>
+
+            <button
+              onClick={() => setActiveSubtab("greeks")}
+              className={`px-3 py-1 rounded-md font-bold transition-all flex items-center gap-1.5 ${
+                activeSubtab === "greeks"
+                  ? "bg-purple-500/20 text-purple-300 border border-purple-500/40 shadow-sm"
+                  : "text-slate-400 hover:text-white"
+              }`}
+            >
+              <Percent className="w-3.5 h-3.5 text-purple-400" />
+              <span>Greeks Lab</span>
+            </button>
+
+            <button
+              onClick={() => setActiveSubtab("smc")}
+              className={`px-3 py-1 rounded-md font-bold transition-all flex items-center gap-1.5 ${
+                activeSubtab === "smc"
+                  ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-sm"
+                  : "text-slate-400 hover:text-white"
+              }`}
+            >
+              <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+              <span>SMC Order Flow</span>
+            </button>
           </div>
-          <div className="flex items-center gap-2 text-[10px] text-terminal-muted">
-            <span>MACD Hist: {technicals.macd.histogram}</span>
+
+          <div className="text-[10px] font-mono text-slate-500 hidden md:block">
+            <span>Lot Size: {spec.lotSize} Qty</span>
+            <span className="mx-2">•</span>
+            <span>Strike Step: {spec.strikeStep}</span>
           </div>
         </div>
-      )}
+
+        {/* Subtab Contents */}
+        <div className="p-3 max-h-[320px] overflow-y-auto">
+          {/* TAB 1: OPTION CHAIN */}
+          {activeSubtab === "chain" && (
+            <div className="w-full overflow-x-auto">
+              <table className="w-full text-xs font-mono border-collapse">
+                <thead>
+                  <tr className="bg-[#100f24] text-[10px] text-slate-400 border-b border-[#202138]">
+                    <th className="py-1 px-2 text-left text-emerald-400">CALL OI</th>
+                    <th className="py-1 px-2 text-right">VOL</th>
+                    <th className="py-1 px-2 text-right">IV</th>
+                    <th className="py-1 px-2 text-right">DELTA</th>
+                    <th className="py-1 px-2 text-right font-bold text-white">CALL LTP</th>
+                    <th className="py-1 px-2 text-center text-cyan-300 font-bold bg-[#14132e] border-x border-[#252545]">
+                      STRIKE
+                    </th>
+                    <th className="py-1 px-2 text-left font-bold text-white">PUT LTP</th>
+                    <th className="py-1 px-2 text-left">DELTA</th>
+                    <th className="py-1 px-2 text-left">IV</th>
+                    <th className="py-1 px-2 text-left">VOL</th>
+                    <th className="py-1 px-2 text-right text-rose-400">PUT OI</th>
+                    <th className="py-1 px-2 text-center">TRADE</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#1b1c2e]">
+                  {optionChain.map((row) => (
+                    <tr
+                      key={row.strike}
+                      className={`hover:bg-[#121128] transition-colors ${
+                        row.isATM ? "bg-[#181735]/60 font-bold text-yellow-300" : ""
+                      }`}
+                    >
+                      {/* Call Side */}
+                      <td className="py-1.5 px-2 text-left text-emerald-400 font-bold">
+                        {row.call.oi?.toLocaleString()}
+                      </td>
+                      <td className="py-1.5 px-2 text-right text-slate-400">
+                        {row.call.volume ? Math.round(row.call.volume / 1000) + "k" : "-"}
+                      </td>
+                      <td className="py-1.5 px-2 text-right text-slate-400">{row.call.iv}%</td>
+                      <td className="py-1.5 px-2 text-right text-cyan-300">{row.call.delta}</td>
+                      <td className="py-1.5 px-2 text-right font-bold text-white">
+                        ₹{row.call.premiumAsk.toFixed(2)}
+                      </td>
+
+                      {/* Strike */}
+                      <td
+                        className={`py-1.5 px-3 text-center font-bold bg-[#14132e] border-x border-[#252545] ${
+                          row.isATM ? "text-yellow-300 bg-yellow-500/10" : "text-white"
+                        }`}
+                      >
+                        {row.strike} {row.isATM && <span className="text-[9px] text-yellow-400 font-normal">ATM</span>}
+                      </td>
+
+                      {/* Put Side */}
+                      <td className="py-1.5 px-2 text-left font-bold text-white">
+                        ₹{row.put.premiumAsk.toFixed(2)}
+                      </td>
+                      <td className="py-1.5 px-2 text-left text-rose-300">{row.put.delta}</td>
+                      <td className="py-1.5 px-2 text-left text-slate-400">{row.put.iv}%</td>
+                      <td className="py-1.5 px-2 text-left text-slate-400">
+                        {row.put.volume ? Math.round(row.put.volume / 1000) + "k" : "-"}
+                      </td>
+                      <td className="py-1.5 px-2 text-right text-rose-400 font-bold">
+                        {row.put.oi?.toLocaleString()}
+                      </td>
+
+                      {/* Trade Buttons */}
+                      <td className="py-1.5 px-2 text-center">
+                        <div className="flex items-center justify-center gap-1">
+                          <button
+                            onClick={() => handleQuickTrade(row.call, "BUY")}
+                            className="px-2 py-0.5 rounded bg-emerald-600/30 hover:bg-emerald-600 text-emerald-300 hover:text-white text-[10px] font-bold border border-emerald-500/40 transition-all"
+                            title={`Buy 1 Lot Call ${row.strike}`}
+                          >
+                            CE
+                          </button>
+                          <button
+                            onClick={() => handleQuickTrade(row.put, "BUY")}
+                            className="px-2 py-0.5 rounded bg-rose-600/30 hover:bg-rose-600 text-rose-300 hover:text-white text-[10px] font-bold border border-rose-500/40 transition-all"
+                            title={`Buy 1 Lot Put ${row.strike}`}
+                          >
+                            PE
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* TAB 2: OI & GEX PROFILE */}
+          {activeSubtab === "oigex" && (
+            <div className="space-y-3 font-mono">
+              {/* Summary Cards */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                <div className="p-2 rounded-lg bg-[#111024] border border-[#202138]">
+                  <span className="text-slate-400 text-[10px] block">CALL RESISTANCE WALL</span>
+                  <span className="text-base font-bold text-amber-400">{optionIntel.callWall}</span>
+                  <span className="text-[10px] text-slate-500 block">Highest Call Open Interest</span>
+                </div>
+                <div className="p-2 rounded-lg bg-[#111024] border border-[#202138]">
+                  <span className="text-slate-400 text-[10px] block">PUT SUPPORT WALL</span>
+                  <span className="text-base font-bold text-emerald-400">{optionIntel.putWall}</span>
+                  <span className="text-[10px] text-slate-500 block">Highest Put Open Interest</span>
+                </div>
+                <div className="p-2 rounded-lg bg-[#111024] border border-[#202138]">
+                  <span className="text-slate-400 text-[10px] block">MAX PAIN STRIKE</span>
+                  <span className="text-base font-bold text-purple-300">{optionIntel.maxPain}</span>
+                  <span className="text-[10px] text-slate-500 block">Lowest Option Payout Point</span>
+                </div>
+                <div className="p-2 rounded-lg bg-[#111024] border border-[#202138]">
+                  <span className="text-slate-400 text-[10px] block">PUT-CALL RATIO (PCR)</span>
+                  <span
+                    className={`text-base font-bold ${
+                      optionIntel.pcr >= 1.0 ? "text-emerald-400" : "text-rose-400"
+                    }`}
+                  >
+                    {optionIntel.pcr}
+                  </span>
+                  <span className="text-[10px] text-slate-500 block">
+                    {optionIntel.pcr >= 1.0 ? "Bullish Accumulation" : "Bearish Underwriting"}
+                  </span>
+                </div>
+              </div>
+
+              {/* Horizontal OI Distribution Bars */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between text-[10px] text-slate-400 px-1 font-bold">
+                  <span>← CALL OI (Resistance)</span>
+                  <span>STRIKE</span>
+                  <span>PUT OI (Support) →</span>
+                </div>
+                {optionChain.map((row) => {
+                  const maxOI = Math.max(
+                    ...optionChain.map((r) => Math.max(r.call.oi || 0, r.put.oi || 0)),
+                    1
+                  );
+                  const callPct = Math.round(((row.call.oi || 0) / maxOI) * 100);
+                  const putPct = Math.round(((row.put.oi || 0) / maxOI) * 100);
+
+                  return (
+                    <div
+                      key={row.strike}
+                      className={`flex items-center gap-2 text-xs py-0.5 px-2 rounded ${
+                        row.isATM ? "bg-[#181735] border border-yellow-500/30 font-bold" : ""
+                      }`}
+                    >
+                      {/* Call Bar (Right to Left) */}
+                      <div className="flex-1 flex justify-end items-center gap-1.5">
+                        <span className="text-[10px] text-slate-400">
+                          {row.call.oi ? (row.call.oi / 1000).toFixed(0) + "k" : "0"}
+                        </span>
+                        <div className="w-32 bg-[#121124] rounded-full h-2 overflow-hidden flex justify-end">
+                          <div
+                            className={`h-full rounded-full ${
+                              row.strike === optionIntel.callWall ? "bg-amber-400" : "bg-rose-500/80"
+                            }`}
+                            style={{ width: `${callPct}%` }}
+                          />
+                        </div>
+                      </div>
+
+                      {/* Strike */}
+                      <div className="w-16 text-center font-bold text-white text-xs">
+                        {row.strike}
+                      </div>
+
+                      {/* Put Bar (Left to Right) */}
+                      <div className="flex-1 flex items-center gap-1.5">
+                        <div className="w-32 bg-[#121124] rounded-full h-2 overflow-hidden">
+                          <div
+                            className={`h-full rounded-full ${
+                              row.strike === optionIntel.putWall ? "bg-emerald-400" : "bg-cyan-500/80"
+                            }`}
+                            style={{ width: `${putPct}%` }}
+                          />
+                        </div>
+                        <span className="text-[10px] text-slate-400">
+                          {row.put.oi ? (row.put.oi / 1000).toFixed(0) + "k" : "0"}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* TAB 3: GREEKS LAB */}
+          {activeSubtab === "greeks" && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 text-xs font-mono">
+              <div className="p-3 rounded-lg bg-[#111024] border border-[#202138] space-y-1">
+                <span className="text-cyan-400 font-bold block text-sm">DELTA (Δ)</span>
+                <div className="text-white text-base font-bold">
+                  Call: +{currentContract.delta} | Put: -{(1 - currentContract.delta).toFixed(2)}
+                </div>
+                <p className="text-[11px] text-slate-400 leading-relaxed">
+                  Measures the rate of change of option price per ₹1 move in spot price.
+                </p>
+              </div>
+
+              <div className="p-3 rounded-lg bg-[#111024] border border-[#202138] space-y-1">
+                <span className="text-purple-400 font-bold block text-sm">GAMMA (Γ)</span>
+                <div className="text-white text-base font-bold">+{currentContract.gamma || 0.0018}</div>
+                <p className="text-[11px] text-slate-400 leading-relaxed">
+                  Rate of change in Delta per ₹1 move. Highest at ATM strikes near expiry.
+                </p>
+              </div>
+
+              <div className="p-3 rounded-lg bg-[#111024] border border-[#202138] space-y-1">
+                <span className="text-rose-400 font-bold block text-sm">THETA (θ)</span>
+                <div className="text-rose-400 text-base font-bold">{currentContract.theta} / day</div>
+                <p className="text-[11px] text-slate-400 leading-relaxed">
+                  Time decay loss per calendar day for buyers. Accelerates closer to expiry.
+                </p>
+              </div>
+
+              <div className="p-3 rounded-lg bg-[#111024] border border-[#202138] space-y-1">
+                <span className="text-amber-400 font-bold block text-sm">EXPECTED MOVE CONE</span>
+                <div className="text-white text-base font-bold">
+                  ±{optionIntel.expectedMove} pts ({optionIntel.expectedMoveLower} ~ {optionIntel.expectedMoveUpper})
+                </div>
+                <p className="text-[11px] text-slate-400 leading-relaxed">
+                  IV-implied 1 standard deviation (68% confidence) price band for current expiry.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 4: SMC ORDER FLOW */}
+          {activeSubtab === "smc" && (
+            <div className="space-y-3 font-mono text-xs">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                <div className="p-2.5 rounded-lg bg-[#111024] border border-[#202138]">
+                  <span className="text-slate-400 text-[10px] block">PAVP POC MAGNET</span>
+                  <span className="text-base font-bold text-rose-400">₹{pavp.poc}</span>
+                  <span className="text-[10px] text-slate-500 block">Highest volume node</span>
+                </div>
+                <div className="p-2.5 rounded-lg bg-[#111024] border border-[#202138]">
+                  <span className="text-slate-400 text-[10px] block">VALUE AREA BOUNDARIES</span>
+                  <span className="text-base font-bold text-blue-400">
+                    {pavp.val} ~ {pavp.vah}
+                  </span>
+                  <span className="text-[10px] text-slate-500 block">68% Institutional volume</span>
+                </div>
+                <div className="p-2.5 rounded-lg bg-[#111024] border border-[#202138]">
+                  <span className="text-slate-400 text-[10px] block">50% EQUILIBRIUM</span>
+                  <span className="text-base font-bold text-cyan-300">
+                    ₹{smc?.equilibriumPrice || quote.bid}
+                  </span>
+                  <span className="text-[10px] text-slate-500 block">Premium / Discount mid</span>
+                </div>
+                <div className="p-2.5 rounded-lg bg-[#111024] border border-[#202138]">
+                  <span className="text-slate-400 text-[10px] block">15M AUTO STRATEGY</span>
+                  <span className="text-base font-bold text-emerald-400">ACTIVE (1 LOT)</span>
+                  <span className="text-[10px] text-slate-500 block">Auto Telegram broadcast</span>
+                </div>
+              </div>
+
+              {/* Action buttons */}
+              <div className="flex items-center justify-between p-2 rounded-lg bg-[#111024] border border-[#202138]">
+                <span className="text-slate-400 text-xs">
+                  Copy institutional coordinates for your pending orders:
+                </span>
+                <button
+                  onClick={() => {
+                    const text = `ApexFX ${activeSymbol} Coordinates:\n- Spot: ₹${quote.bid}\n- POC: ₹${pavp.poc}\n- VAH: ₹${pavp.vah}\n- VAL: ₹${pavp.val}\n- Call Wall: ₹${optionIntel.callWall}\n- Put Wall: ₹${optionIntel.putWall}\n- Max Pain: ₹${optionIntel.maxPain}`;
+                    copyToClipboard(text, "SMC");
+                  }}
+                  className="px-3 py-1 rounded bg-cyan-600/20 hover:bg-cyan-600/30 border border-cyan-500/40 text-cyan-300 text-xs font-bold flex items-center gap-1.5 transition-all"
+                >
+                  {copiedLevel === "SMC" ? (
+                    <>
+                      <Check className="w-3.5 h-3.5 text-emerald-400" />
+                      <span className="text-emerald-400">Copied!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3.5 h-3.5 text-cyan-400" />
+                      <span>Copy Coordinates</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 };
