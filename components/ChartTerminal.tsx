@@ -1270,12 +1270,20 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
 
               <div className="flex items-center gap-2">
                 <button
+                  onClick={() => setChartMode("smart")}
+                  className="px-3 py-1 rounded bg-cyan-600/20 hover:bg-cyan-600/30 text-cyan-300 font-bold text-xs border border-cyan-500/40 transition-all flex items-center gap-1.5"
+                >
+                  <Layers className="w-3.5 h-3.5" />
+                  <span>Switch to Apex PAVP Canvas</span>
+                </button>
+
+                <button
                   onClick={() => window.open("https://charting.nseindia.com/", "_blank", "noopener,noreferrer")}
-                  className="px-3.5 py-1.5 rounded bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-md shadow-amber-600/30 transition-all border border-amber-400/50"
-                  title="Launch Official NSE Charting in dedicated full-screen window"
+                  className="px-3 py-1 rounded bg-amber-600/80 hover:bg-amber-600 text-white font-bold text-xs flex items-center gap-1.5 transition-all border border-amber-400/40"
+                  title="Open charting.nse.com in external tab"
                 >
                   <ExternalLink className="w-3.5 h-3.5" />
-                  <span>Launch Official charting.nse.com in Full Window</span>
+                  <span>Pop Out Window</span>
                 </button>
               </div>
             </div>
@@ -1293,10 +1301,7 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
               ].map((item) => (
                 <button
                   key={item.sym}
-                  onClick={() => {
-                    onSelectSymbol(item.sym as AssetSymbol);
-                    window.open("https://charting.nseindia.com/", "_blank", "noopener,noreferrer");
-                  }}
+                  onClick={() => onSelectSymbol(item.sym as AssetSymbol)}
                   className={`px-2 py-0.5 rounded font-mono font-bold transition-all border ${
                     activeSymbol === item.sym
                       ? "bg-amber-500/20 text-amber-300 border-amber-500/50"
@@ -1308,43 +1313,14 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
               ))}
             </div>
 
-            {/* Live Chart Container / Iframe with Direct Launch Gateway */}
-            <div className="relative flex-1 w-full min-h-[440px] flex flex-col items-center justify-center p-4">
+            {/* Direct Embedded NSE Live Chart */}
+            <div className="relative flex-1 w-full min-h-[520px] bg-[#0A0E17]">
               <iframe
-                src="https://charting.nseindia.com/"
-                className="w-full h-full min-h-[440px] border-none rounded bg-[#0A0E17]"
-                sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
-                title="NSE Technical Charting"
+                src="/api/nse-chart"
+                className="w-full h-full min-h-[520px] border-none bg-[#0A0E17]"
+                title="NSE Official Technical Charting"
+                allow="fullscreen"
               />
-
-              {/* Seamless Fullscreen Direct Action Overlay */}
-              <div className="absolute inset-0 bg-[#0A0E17]/85 backdrop-blur-sm flex flex-col items-center justify-center text-center p-6 space-y-4 pointer-events-auto">
-                <div className="w-12 h-12 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 shadow-lg">
-                  <Activity className="w-6 h-6 animate-pulse" />
-                </div>
-                <div className="max-w-md space-y-1.5">
-                  <h3 className="text-base font-bold text-white">NSE Official Technical Charting Gateway</h3>
-                  <p className="text-xs text-terminal-muted leading-relaxed">
-                    National Stock Exchange of India (<code className="text-amber-300">charting.nseindia.com</code>) enforces exchange security headers (<code className="text-gray-400">X-Frame-Options: DENY</code>). Click below to launch the authentic NSE Charting console in a dedicated native window with real-time F&O data.
-                  </p>
-                </div>
-                <div className="flex items-center gap-3">
-                  <button
-                    onClick={() => window.open("https://charting.nseindia.com/", "_blank", "noopener,noreferrer")}
-                    className="px-5 py-2.5 rounded-lg bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white font-bold text-xs flex items-center gap-2 shadow-lg shadow-amber-600/30 transition-all border border-amber-400/50"
-                  >
-                    <ExternalLink className="w-4 h-4" />
-                    <span>Launch charting.nse.com in Full Window</span>
-                  </button>
-                  <button
-                    onClick={() => setChartMode("smart")}
-                    className="px-4 py-2.5 rounded-lg bg-cyan-600/20 hover:bg-cyan-600/30 text-cyan-300 font-bold text-xs border border-cyan-500/40 transition-all flex items-center gap-2"
-                  >
-                    <Layers className="w-4 h-4" />
-                    <span>Apex PAVP / Real Canvas</span>
-                  </button>
-                </div>
-              </div>
             </div>
           </div>
         ) : (
