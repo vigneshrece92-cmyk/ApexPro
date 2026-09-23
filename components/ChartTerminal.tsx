@@ -31,6 +31,7 @@ import {
   Target,
   Anchor,
   Flame,
+  ExternalLink,
 } from "lucide-react";
 
 interface PAVPOverlayCoords {
@@ -85,8 +86,8 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
   const lastCandleRef = useRef<Candle | null>(null);
 
 
-  // Mode: "smart" (Professional Interactive Lightweight Canvas with VP, SMC, Signals) or "tradingview" (External Iframe)
-  const [chartMode, setChartMode] = useState<"tradingview" | "smart">("smart");
+  // Mode: "smart" (Professional Interactive Lightweight Canvas with VP, SMC, Signals) or "nse" (Official NSE Technical Charting)
+  const [chartMode, setChartMode] = useState<"nse" | "smart">("smart");
 
   // Indicator & SMC Overlays - Clean professional defaults (Pure PAVP by default)
   const [showEMA, setShowEMA] = useState<boolean>(false);
@@ -102,7 +103,7 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
   const [showORB, setShowORB] = useState<boolean>(false); // Opening Range High & Low (ORB 15M/30M)
   const [showAsia, setShowAsia] = useState<boolean>(false); // Asian Session High & Low (Asia H / Asia L)
   const [showDO, setShowDO] = useState<boolean>(false); // Daily Open (DO)
-  const [showPAVPPanel, setShowPAVPPanel] = useState<boolean>(true); // PAVP HUD Drawer
+  const [showPAVPPanel, setShowPAVPPanel] = useState<boolean>(false); // Hidden by default so chart is 100% full-screen visible
   const [showLevelDrawer, setShowLevelDrawer] = useState<boolean>(false); // SMC Level Drawer
   const [showRSI, setShowRSI] = useState<boolean>(false); // RSI Sub-Panel
   const [overlayCoords, setOverlayCoords] = useState<PAVPOverlayCoords | null>(null);
@@ -879,30 +880,30 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
         <div className="flex items-center gap-1.5">
           <div className="flex items-center bg-terminal-bg rounded p-0.5 border border-terminal-border text-xs">
             <button
-              onClick={() => setChartMode("tradingview")}
-              className={`px-2 py-0.5 rounded flex items-center gap-1 font-semibold transition-all ${
-                chartMode === "tradingview"
-                  ? "bg-blue-600 text-white shadow-sm"
+              onClick={() => setChartMode("nse")}
+              className={`px-2.5 py-1 rounded flex items-center gap-1.5 font-bold transition-all ${
+                chartMode === "nse"
+                  ? "bg-amber-600 text-white shadow-sm"
                   : "text-terminal-muted hover:text-white"
               }`}
-              title="Official Real-Time TradingView Live Institutional Feed"
+              title="Official National Stock Exchange of India Technical Charting (charting.nseindia.com)"
             >
-              <Tv className="w-3 h-3 text-cyan-300" />
-              <span>TradingView Live</span>
-              <span className="w-1.5 h-1.5 rounded-full bg-bull animate-pulse" />
+              <ExternalLink className="w-3.5 h-3.5 text-amber-300" />
+              <span>NSE India Chart (charting.nse.com)</span>
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
             </button>
 
             <button
               onClick={() => setChartMode("smart")}
-              className={`px-2 py-0.5 rounded flex items-center gap-1 font-semibold transition-all ${
+              className={`px-2.5 py-1 rounded flex items-center gap-1.5 font-bold transition-all ${
                 chartMode === "smart"
                   ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-sm"
                   : "text-terminal-muted hover:text-white"
               }`}
-              title="Apex Smart Canvas with Real Exchange Candles & Overlays"
+              title="Apex PAVP Smart Chart (Real Exchange Candlesticks & Volume Profile)"
             >
-              <Layers className="w-3 h-3 text-cyan-400" />
-              <span>SMC Smart Chart</span>
+              <Layers className="w-3.5 h-3.5 text-cyan-400" />
+              <span>Apex PAVP / SMC Chart</span>
             </button>
           </div>
 
@@ -1028,18 +1029,18 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
               <span>VWCB Spikes</span>
             </button>
 
-            {/* PAVP HUD Drawer Toggle */}
+            {/* PAVP Volume Profile Toggle */}
             <button
-              onClick={() => setShowPAVPPanel(!showPAVPPanel)}
+              onClick={() => setShowVP(!showVP)}
               className={`px-2 py-0.5 rounded text-[10px] font-bold border transition-all flex items-center gap-1 ${
-                showPAVPPanel
+                showVP
                   ? "bg-purple-500/20 text-purple-300 border-purple-500/40 shadow-sm"
                   : "bg-terminal-bg text-terminal-muted border-terminal-border"
               }`}
-              title="Toggle Pivot-Anchored Volume Profile HUD & Histogram"
+              title="Toggle Pivot-Anchored Volume Profile & Value Area Overlay"
             >
               <Anchor className="w-2.5 h-2.5 text-purple-400" />
-              <span>PAVP HUD</span>
+              <span>PAVP Profile</span>
             </button>
 
             {/* PDH / PDL Toggle */}
@@ -1253,94 +1254,99 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
 
       {/* Main Chart Container */}
       <div className="relative flex-1 min-h-[460px] w-full bg-[#0B0E14]">
-        {chartMode === "tradingview" ? (
-          <>
-            <iframe
-              key={`${tvSymbol}-${tvInterval}`}
-              src={tvEmbedUrl}
-              className="w-full h-full min-h-[460px] border-none"
-              allowFullScreen
-            />
+        {chartMode === "nse" ? (
+          <div className="relative w-full h-full min-h-[500px] flex flex-col bg-[#0A0E17]">
+            {/* Top NSE Gateway Header */}
+            <div className="flex flex-wrap items-center justify-between p-3 bg-[#0F1420] border-b border-terminal-border gap-2">
+              <div className="flex items-center gap-2">
+                <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
+                <span className="text-xs font-bold text-white tracking-wide">
+                  National Stock Exchange of India (NSE) — Official Technical Charting
+                </span>
+                <span className="px-1.5 py-0.5 text-[10px] font-mono rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 font-bold">
+                  charting.nseindia.com
+                </span>
+              </div>
 
-            {/* Interactive Floating SMC Matrix Card (Toggleable) */}
-            {showLevelDrawer && smc && (
-              <div className="absolute top-3 right-3 z-20 w-72 bg-[#0C1019]/95 backdrop-blur-md p-3.5 rounded-lg border border-terminal-border/90 shadow-2xl space-y-2.5 animate-in fade-in slide-in-from-top-2">
-                <div className="flex items-center justify-between pb-1.5 border-b border-terminal-border/60">
-                  <div className="flex items-center gap-1.5 text-xs font-bold text-white">
-                    <ShieldCheck className="w-4 h-4 text-cyan-400" />
-                    <span>{activeSymbol} SMC Confluence</span>
-                  </div>
-                  <span className="px-1.5 py-0.5 text-[9px] font-mono font-bold rounded bg-cyan-500/20 text-cyan-300">
-                    {smc.confluenceScore}% CONFLUENCE
-                  </span>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => window.open("https://charting.nseindia.com/", "_blank", "noopener,noreferrer")}
+                  className="px-3.5 py-1.5 rounded bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-md shadow-amber-600/30 transition-all border border-amber-400/50"
+                  title="Launch Official NSE Charting in dedicated full-screen window"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  <span>Launch Official charting.nse.com in Full Window</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Quick Symbol Switch Bar */}
+            <div className="flex items-center gap-2 px-3 py-1.5 bg-[#0D121D] border-b border-terminal-border/60 text-[11px] overflow-x-auto">
+              <span className="text-terminal-muted font-bold">NSE F&O Symbols:</span>
+              {[
+                { name: "NIFTY 50", sym: "NIFTY" },
+                { name: "NIFTY BANK", sym: "BANKNIFTY" },
+                { name: "FINNIFTY", sym: "FINNIFTY" },
+                { name: "SENSEX", sym: "SENSEX" },
+                { name: "MCX CRUDE OIL", sym: "CRUDEOIL" },
+                { name: "MCX NATURAL GAS", sym: "NATURALGAS" },
+              ].map((item) => (
+                <button
+                  key={item.sym}
+                  onClick={() => {
+                    onSelectSymbol(item.sym as AssetSymbol);
+                    window.open("https://charting.nseindia.com/", "_blank", "noopener,noreferrer");
+                  }}
+                  className={`px-2 py-0.5 rounded font-mono font-bold transition-all border ${
+                    activeSymbol === item.sym
+                      ? "bg-amber-500/20 text-amber-300 border-amber-500/50"
+                      : "bg-terminal-bg text-gray-300 hover:text-white border-terminal-border"
+                  }`}
+                >
+                  {item.name}
+                </button>
+              ))}
+            </div>
+
+            {/* Live Chart Container / Iframe with Direct Launch Gateway */}
+            <div className="relative flex-1 w-full min-h-[440px] flex flex-col items-center justify-center p-4">
+              <iframe
+                src="https://charting.nseindia.com/"
+                className="w-full h-full min-h-[440px] border-none rounded bg-[#0A0E17]"
+                sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+                title="NSE Technical Charting"
+              />
+
+              {/* Seamless Fullscreen Direct Action Overlay */}
+              <div className="absolute inset-0 bg-[#0A0E17]/85 backdrop-blur-sm flex flex-col items-center justify-center text-center p-6 space-y-4 pointer-events-auto">
+                <div className="w-12 h-12 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 shadow-lg">
+                  <Activity className="w-6 h-6 animate-pulse" />
                 </div>
-
-                <div className="space-y-1.5 text-[11px] font-mono">
-                  <div className="flex items-center justify-between">
-                    <span className="text-terminal-muted">50% Equilibrium:</span>
-                    <button
-                      onClick={() => copyToClipboard(smc.equilibriumPrice.toString(), "50% EQ")}
-                      className="text-cyan-300 font-bold hover:underline"
-                    >
-                      {smc.equilibriumPrice}
-                    </button>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-terminal-muted">0.618 Golden Pocket:</span>
-                    <button
-                      onClick={() => copyToClipboard(smc.fibonacci.fib618.toString(), "0.618 FIB")}
-                      className="text-gold font-bold hover:underline"
-                    >
-                      {smc.fibonacci.fib618}
-                    </button>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-terminal-muted">PDH (Prev Day High):</span>
-                    <button
-                      onClick={() => copyToClipboard(sessionLevels.pdh.toString(), "PDH")}
-                      className="text-amber-300 font-bold hover:underline"
-                    >
-                      {sessionLevels.pdh}
-                    </button>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-terminal-muted">PDL (Prev Day Low):</span>
-                    <button
-                      onClick={() => copyToClipboard(sessionLevels.pdl.toString(), "PDL")}
-                      className="text-purple-300 font-bold hover:underline"
-                    >
-                      {sessionLevels.pdl}
-                    </button>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-terminal-muted">ORB High (15M):</span>
-                    <button
-                      onClick={() => copyToClipboard(sessionLevels.orbHigh.toString(), "ORB-H")}
-                      className="text-cyan-300 font-bold hover:underline"
-                    >
-                      {sessionLevels.orbHigh}
-                    </button>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-terminal-muted">ORB Low (15M):</span>
-                    <button
-                      onClick={() => copyToClipboard(sessionLevels.orbLow.toString(), "ORB-L")}
-                      className="text-orange-300 font-bold hover:underline"
-                    >
-                      {sessionLevels.orbLow}
-                    </button>
-                  </div>
+                <div className="max-w-md space-y-1.5">
+                  <h3 className="text-base font-bold text-white">NSE Official Technical Charting Gateway</h3>
+                  <p className="text-xs text-terminal-muted leading-relaxed">
+                    National Stock Exchange of India (<code className="text-amber-300">charting.nseindia.com</code>) enforces exchange security headers (<code className="text-gray-400">X-Frame-Options: DENY</code>). Click below to launch the authentic NSE Charting console in a dedicated native window with real-time F&O data.
+                  </p>
                 </div>
-
-                <div className="pt-1.5 border-t border-terminal-border/60 flex items-center justify-between text-[10px]">
-                  <span className="text-terminal-muted">Institutional Flow:</span>
-                  <span className={smc.zone === "Discount" ? "text-bull font-bold" : "text-bear font-bold"}>
-                    {smc.zone === "Discount" ? "Accumulation / Long Bias" : "Distribution / Short Bias"}
-                  </span>
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => window.open("https://charting.nseindia.com/", "_blank", "noopener,noreferrer")}
+                    className="px-5 py-2.5 rounded-lg bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white font-bold text-xs flex items-center gap-2 shadow-lg shadow-amber-600/30 transition-all border border-amber-400/50"
+                  >
+                    <ExternalLink className="w-4 h-4" />
+                    <span>Launch charting.nse.com in Full Window</span>
+                  </button>
+                  <button
+                    onClick={() => setChartMode("smart")}
+                    className="px-4 py-2.5 rounded-lg bg-cyan-600/20 hover:bg-cyan-600/30 text-cyan-300 font-bold text-xs border border-cyan-500/40 transition-all flex items-center gap-2"
+                  >
+                    <Layers className="w-4 h-4" />
+                    <span>Apex PAVP / Real Canvas</span>
+                  </button>
                 </div>
               </div>
-            )}
-          </>
+            </div>
+          </div>
         ) : (
           <>
             <div ref={chartContainerRef} className="w-full h-full min-h-[460px]" />
@@ -1447,8 +1453,11 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
                     <g
                       transform={`translate(${overlayCoords.anchorX}, ${
                         overlayCoords.pivot.type === "low"
-                          ? overlayCoords.anchorPriceY + 14
-                          : overlayCoords.anchorPriceY - 34
+                          ? Math.min(
+                              (chartContainerRef.current?.clientHeight || 450) - 35,
+                              overlayCoords.anchorPriceY + 14
+                            )
+                          : Math.max(10, overlayCoords.anchorPriceY - 34)
                       })`}
                     >
                       <rect
@@ -1492,71 +1501,6 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
                     </g>
                   )}
               </svg>
-            )}
-
-            {/* Floating Pivot-Anchored Volume Profile (PAVP) HUD Card */}
-            {showPAVPPanel && pavp && pavp.poc > 0 && (
-              <div className="absolute top-3 right-3 z-20 w-64 bg-[#0A0E17]/95 backdrop-blur-md p-3 rounded-lg border border-terminal-border/90 shadow-2xl space-y-2 text-xs font-mono">
-                <div className="flex items-center justify-between pb-1.5 border-b border-terminal-border/60">
-                  <div className="flex items-center gap-1.5 font-bold text-white">
-                    <Anchor className="w-3.5 h-3.5 text-purple-400" />
-                    <span className="text-[11px]">PAVP Anchor & Key Levels</span>
-                  </div>
-                  <span className="px-1.5 py-0.5 text-[9px] font-bold rounded bg-purple-500/20 text-purple-300 border border-purple-500/40">
-                    68% VA
-                  </span>
-                </div>
-
-                <div className="space-y-1.5 text-[10px]">
-                  {pavp.pivot && (
-                    <div className="flex items-center justify-between">
-                      <span className="text-terminal-muted">Pivot Anchor:</span>
-                      <span className="text-purple-300 font-bold">
-                        {pavp.pivot.type.toUpperCase()} @ {pavp.pivot.price}
-                      </span>
-                    </div>
-                  )}
-
-                  <div className="flex items-center justify-between">
-                    <span className="text-terminal-muted">POC (Magnet):</span>
-                    <button
-                      onClick={() => copyToClipboard(pavp.poc.toString(), "POC")}
-                      className="text-[#EF4444] font-bold hover:underline flex items-center gap-1"
-                    >
-                      <span>{pavp.poc}</span>
-                      {copiedLevel === "POC" && <Check className="w-2.5 h-2.5 text-bull" />}
-                    </button>
-                  </div>
-
-                  <div className="flex items-center justify-between">
-                    <span className="text-terminal-muted">VAH (Resistance):</span>
-                    <button
-                      onClick={() => copyToClipboard(pavp.vah.toString(), "VAH")}
-                      className="text-[#2563EB] font-bold hover:underline flex items-center gap-1"
-                    >
-                      <span>{pavp.vah}</span>
-                      {copiedLevel === "VAH" && <Check className="w-2.5 h-2.5 text-bull" />}
-                    </button>
-                  </div>
-
-                  <div className="flex items-center justify-between">
-                    <span className="text-terminal-muted">VAL (Support):</span>
-                    <button
-                      onClick={() => copyToClipboard(pavp.val.toString(), "VAL")}
-                      className="text-[#2563EB] font-bold hover:underline flex items-center gap-1"
-                    >
-                      <span>{pavp.val}</span>
-                      {copiedLevel === "VAL" && <Check className="w-2.5 h-2.5 text-bull" />}
-                    </button>
-                  </div>
-                </div>
-
-                <div className="pt-1.5 border-t border-terminal-border/60 text-[9px] text-terminal-muted space-y-0.5">
-                  <div className="text-gray-300 font-bold">🎯 Auto-Bot Strategy:</div>
-                  <div className="text-emerald-400">⚡ Dip to VAL → BUY CE (Target POC/VAH)</div>
-                  <div className="text-rose-400">⚡ Push to VAH → BUY PE (Target POC/VAL)</div>
-                </div>
-              </div>
             )}
 
             {/* Clean Top Legend Overlay */}

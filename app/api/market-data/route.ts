@@ -82,10 +82,9 @@ export async function GET(req: NextRequest) {
             const regularPrice = meta?.regularMarketPrice;
             if (regularPrice == null) return;
 
-            // MCX conversion: NYMEX CL=F / NG=F converted to MCX INR with true Indian customs & tariff parity
             const isCrude = key === "CRUDEOIL";
             const isNatGas = key === "NATURALGAS";
-            const mcxMultiplier = isCrude ? 96.85 : isNatGas ? 87.20 : 1.0;
+            const mcxMultiplier = isCrude ? 93.60 : isNatGas ? 87.58 : 1.0;
 
             let effectivePrice = regularPrice * mcxMultiplier;
             let prevClose = (meta?.previousClose || meta?.chartPreviousClose || regularPrice) * mcxMultiplier;
@@ -96,21 +95,6 @@ export async function GET(req: NextRequest) {
 
             let high = (meta?.regularMarketDayHigh || meta?.highPrice || regularPrice) * mcxMultiplier;
             let low = (meta?.regularMarketDayLow || meta?.lowPrice || regularPrice) * mcxMultiplier;
-
-            // MCX Indian Futures Parity Calibration for NATURALGAS & CRUDEOIL
-            if (isNatGas) {
-              effectivePrice = 271.50;
-              prevClose = 272.90;
-              changePercent = -0.51;
-              high = 273.70;
-              low = 270.50;
-            } else if (isCrude) {
-              effectivePrice = 8585.00;
-              prevClose = 8698.00;
-              changePercent = -1.30;
-              high = 8800.00;
-              low = 8529.00;
-            }
 
             const baseQuote = INITIAL_QUOTES[key];
 
@@ -132,49 +116,41 @@ export async function GET(req: NextRequest) {
               lastUpdate: Date.now(),
             };
 
-            // If this is the requested active symbol, parse its real candles
+            // If this is the requested active symbol, parse its real live exchange candles
             if (isTarget) {
-              if (isNatGas) {
-                // Generate authentic MCX intraday session candles strictly within MCX range [270.50 - 273.70]
-                activeCandles = generateRealisticCandles("NATURALGAS", timeframe, count, 271.50);
-              } else if (isCrude) {
-                // Generate authentic MCX Crude Oil session matching TradingView reference (Low 8529, POC 8665, High 8800, Close 8585)
-                activeCandles = generateRealisticCandles("CRUDEOIL", timeframe, count, 8585.00);
-              } else {
-                const times = res0.timestamp || [];
-                const quotes = res0.indicators?.quote?.[0] || {};
-                const parsed: Candle[] = [];
+              const times = res0.timestamp || [];
+              const quotes = res0.indicators?.quote?.[0] || {};
+              const parsed: Candle[] = [];
 
-                for (let i = 0; i < times.length; i++) {
-                  const o = quotes.open?.[i];
-                  const h = quotes.high?.[i];
-                  const l = quotes.low?.[i];
-                  const c = quotes.close?.[i];
-                  const v = quotes.volume?.[i] || 0;
+              for (let i = 0; i < times.length; i++) {
+                const o = quotes.open?.[i];
+                const h = quotes.high?.[i];
+                const l = quotes.low?.[i];
+                const c = quotes.close?.[i];
+                const v = quotes.volume?.[i] || 0;
 
-                  if (o != null && c != null && h != null && l != null) {
-                    // Filter out Yahoo metadata artifacts where bar has 0 volume and 0 price range
-                    const isFlatArtifact = i === times.length - 1 && v === 0 && Math.abs(h - l) < 0.0001 && parsed.length > 0;
-                    if (!isFlatArtifact) {
-                      parsed.push({
-                        time: times[i],
-                        open: +(o * mcxMultiplier).toFixed(precision),
-                        high: +(h * mcxMultiplier).toFixed(precision),
-                        low: +(l * mcxMultiplier).toFixed(precision),
-                        close: +(c * mcxMultiplier).toFixed(precision),
-                        volume: v,
-                      });
-                    }
+                if (o != null && c != null && h != null && l != null) {
+                  // Filter out Yahoo metadata artifacts where bar has 0 volume and 0 price range
+                  const isFlatArtifact = i === times.length - 1 && v === 0 && Math.abs(h - l) < 0.0001 && parsed.length > 0;
+                  if (!isFlatArtifact) {
+                    parsed.push({
+                      time: times[i],
+                      open: +(o * mcxMultiplier).toFixed(precision),
+                      high: +(h * mcxMultiplier).toFixed(precision),
+                      low: +(l * mcxMultiplier).toFixed(precision),
+                      close: +(c * mcxMultiplier).toFixed(precision),
+                      volume: v,
+                    });
                   }
                 }
+              }
 
-                if (parsed.length > 0) {
-                  const lastBar = parsed[parsed.length - 1];
-                  lastBar.close = +effectivePrice.toFixed(precision);
-                  lastBar.high = Math.max(lastBar.high, lastBar.close);
-                  lastBar.low = Math.min(lastBar.low, lastBar.close);
-                  activeCandles = parsed.slice(-count);
-                }
+              if (parsed.length > 0) {
+                const lastBar = parsed[parsed.length - 1];
+                lastBar.close = +effectivePrice.toFixed(precision);
+                lastBar.high = Math.max(lastBar.high, lastBar.close);
+                lastBar.low = Math.min(lastBar.low, lastBar.close);
+                activeCandles = parsed.slice(-count);
               }
             }
           }

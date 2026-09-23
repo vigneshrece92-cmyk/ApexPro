@@ -492,7 +492,7 @@ export function generateCrudeOilSessionCandles(
   const vah = 8735.0;
   const sessionHigh = 8800.0;
 
-  let prevClose = 8850.0;
+  let prevClose = 8780.0;
 
   for (let i = 0; i < count; i++) {
     const time = startTime + i * stepSec;
@@ -502,78 +502,101 @@ export function generateCrudeOilSessionCandles(
     let low = prevClose;
     let volume = 15000;
 
+    // Pseudo-random deterministic noise
+    const noise = Math.sin(i * 3.7 + 1.2) * 8.5;
+    const isBull = Math.cos(i * 2.3 + 0.4) > 0;
+
     if (i < anchorIdx) {
+      // Natural 2-wave pullback before the anchor low (mix of green and red bars)
       const prog = i / anchorIdx;
-      const target = 8850 - prog * 250 + Math.sin(i * 0.8) * 18;
-      close = +target.toFixed(precision);
-      high = +Math.max(open, close + 8).toFixed(precision);
-      low = +Math.min(open, close - 8).toFixed(precision);
-      volume = Math.floor(18000 + Math.abs(Math.sin(i * 3.4)) * 6000);
+      // Multi-wave oscillation descending toward anchorLow
+      const wave = Math.sin(prog * Math.PI * 2.5) * 35.0;
+      const baseline = 8780.0 - prog * 190.0 + wave + noise;
+      
+      const bodySize = Math.max(4, Math.abs(Math.sin(i * 1.9)) * 14);
+      open = +(baseline + (isBull ? -bodySize * 0.5 : bodySize * 0.5)).toFixed(precision);
+      close = +(baseline + (isBull ? bodySize * 0.5 : -bodySize * 0.5)).toFixed(precision);
+      
+      const wickTop = Math.max(3, Math.abs(Math.sin(i * 4.1)) * 12);
+      const wickBottom = Math.max(3, Math.abs(Math.cos(i * 3.3)) * 12);
+      high = +(Math.max(open, close) + wickTop).toFixed(precision);
+      low = +(Math.max(anchorLow + 5, Math.min(open, close) - wickBottom)).toFixed(precision);
+      volume = Math.floor(18000 + Math.abs(Math.sin(i * 2.4)) * 9000);
     } else if (i === anchorIdx) {
-      // 16:00 ANCHOR SWING LOW (8,529)
-      open = 8598.0;
-      close = 8576.0;
-      high = 8612.0;
+      // 16:00 ANCHOR SWING LOW (8,529) with long lower rejection wick
+      open = 8565.0;
+      close = 8572.0;
+      high = 8585.0;
       low = anchorLow; // 8,529.00!
       volume = 58270; // 58.27K!
     } else if (i === reclaimIdx) {
-      // BUY CE @ VAL (Sweep below VAL 8,590 and immediate bullish reclaim)
-      open = 8576.0;
+      // BUY CE @ VAL (Reclaim back above VAL 8,590)
+      open = 8572.0;
       close = 8614.0;
       high = 8626.0;
-      low = 8564.0; // Swept below VAL 8590
+      low = 8564.0;
       volume = 38400;
     } else if (i > reclaimIdx && i < highIdx) {
-      const relIdx = i - reclaimIdx; // 1 to 20
+      const relIdx = i - reclaimIdx;
       if (relIdx <= 5) {
-        // Phase 1: 5 bars consolidating right in the VAL zone (8,580 - 8,630)
-        const wave = Math.sin(relIdx * 1.4) * 14;
-        close = +(8596 + wave).toFixed(precision);
-        high = +(Math.max(open, close) + 10).toFixed(precision);
-        low = +(Math.min(open, close) - 10).toFixed(precision);
-        volume = Math.floor(32000 + Math.abs(Math.cos(relIdx * 1.5)) * 6000);
+        // Phase 1: Consolidation in VAL zone (8,580 - 8,630) with alternating green & red
+        const localNoise = Math.sin(relIdx * 2.8) * 12;
+        const body = Math.max(3, Math.abs(Math.cos(relIdx * 1.7)) * 10);
+        open = +(8598 + localNoise - (isBull ? body * 0.5 : -body * 0.5)).toFixed(precision);
+        close = +(8598 + localNoise + (isBull ? body * 0.5 : -body * 0.5)).toFixed(precision);
+        high = +(Math.max(open, close) + 8).toFixed(precision);
+        low = +(Math.min(open, close) - 8).toFixed(precision);
+        volume = Math.floor(30000 + Math.abs(Math.sin(relIdx * 1.5)) * 8000);
       } else if (relIdx <= 14) {
-        // Phase 2: 9 bars of heavy institutional rotation at POC (8,650 - 8,680)
-        const wave = Math.sin((relIdx - 5) * 1.3) * 14;
-        close = +(poc + wave).toFixed(precision);
-        high = +(Math.max(open, close) + 9).toFixed(precision);
-        low = +(Math.min(open, close) - 9).toFixed(precision);
-        volume = Math.floor(48000 + Math.abs(Math.sin(relIdx * 1.9)) * 14000); // Peak volume at POC 8,665
+        // Phase 2: Institutional rotation at POC (8,650 - 8,680)
+        const localNoise = Math.sin((relIdx - 5) * 1.6) * 12;
+        const body = Math.max(3, Math.abs(Math.sin(relIdx * 2.1)) * 9);
+        open = +(poc + localNoise - (isBull ? body * 0.5 : -body * 0.5)).toFixed(precision);
+        close = +(poc + localNoise + (isBull ? body * 0.5 : -body * 0.5)).toFixed(precision);
+        high = +(Math.max(open, close) + 7).toFixed(precision);
+        low = +(Math.min(open, close) - 7).toFixed(precision);
+        volume = Math.floor(45000 + Math.abs(Math.sin(relIdx * 1.9)) * 12000);
       } else {
-        // Phase 3: 5 bars expanding upward through VAH (8,705 - 8,760)
+        // Phase 3: Upward expansion toward VAH (8,705 - 8,760)
         const subProg = (relIdx - 14) / 6;
-        close = +(8705 + subProg * 55).toFixed(precision);
-        high = +(close + 10).toFixed(precision);
-        low = +(open - 8).toFixed(precision);
+        const base = 8705 + subProg * 55;
+        const body = Math.max(4, Math.abs(Math.cos(relIdx * 2.5)) * 11);
+        open = +(base - (isBull ? body * 0.5 : -body * 0.5)).toFixed(precision);
+        close = +(base + (isBull ? body * 0.5 : -body * 0.5)).toFixed(precision);
+        high = +(Math.max(open, close) + 9).toFixed(precision);
+        low = +(Math.min(open, close) - 7).toFixed(precision);
         volume = Math.floor(28000 + subProg * 6000);
       }
     } else if (i === highIdx) {
       // SESSION HIGH AT 8,800 WITH UPPER WICK
-      open = 8776.0;
+      open = 8768.0;
       high = sessionHigh; // 8,800.00!
-      close = 8764.0;
-      low = 8758.0;
+      close = 8760.0;
+      low = 8752.0;
       volume = 26500;
     } else if (i > highIdx && i < count - 1) {
       if (i === rejectIdx) {
-        // SELL PE @ VAH (Sweep above VAH 8,735 & rejection back inside Value Area)
+        // SELL PE @ VAH (Rejection back inside Value Area)
         open = 8744.0;
-        high = 8752.0; // Swept above VAH 8,735
-        close = 8718.0; // Closes cleanly below VAH 8,735!
+        high = 8752.0;
+        close = 8718.0;
         low = 8712.0;
         volume = 32500;
       } else {
         const fallProg = (i - highIdx) / (count - 1 - highIdx);
-        close = +(8764 - fallProg * 70).toFixed(precision);
+        const base = 8740 - fallProg * 140;
+        const body = Math.max(3, Math.abs(Math.sin(i * 1.8)) * 8);
+        open = +(base - (isBull ? body * 0.5 : -body * 0.5)).toFixed(precision);
+        close = +(base + (isBull ? body * 0.5 : -body * 0.5)).toFixed(precision);
         high = +(Math.max(open, close) + 6).toFixed(precision);
         low = +(Math.min(open, close) - 6).toFixed(precision);
-        volume = 22000;
+        volume = 24000;
       }
     } else {
-      // FINAL CANDLE (Matches TradingView Quote: O 8700 H 8710 L 8562 C 8585 -1.30%)
-      open = 8700.0;
-      high = 8710.0;
-      low = 8562.0;
+      // FINAL CANDLE (Smoothly connecting to currentBid)
+      open = +(currentBid + 6.0).toFixed(precision);
+      high = +(currentBid + 12.0).toFixed(precision);
+      low = +(currentBid - 8.0).toFixed(precision);
       close = currentBid; // 8585.00
       volume = 35900;
     }
