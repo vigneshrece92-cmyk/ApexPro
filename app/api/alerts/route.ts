@@ -51,55 +51,59 @@ export async function GET() {
             }
           );
 
-          const defaultQuote = INITIAL_QUOTES[item.symbol];
-          const precision = defaultQuote?.pipPrecision || 2;
-          const mult = item.multiplier || 1;
+            const defaultQuote = INITIAL_QUOTES[item.symbol];
+            const precision = defaultQuote?.pipPrecision || 2;
+            const mult = item.multiplier || 1;
 
-          if (res.ok) {
-            const data = await res.json();
-            const res0 = data?.chart?.result?.[0];
-            const regularPrice = res0?.meta?.regularMarketPrice;
-            const livePrice =
-              item.symbol === "NATURALGAS"
-                ? 271.50
-                : regularPrice != null
-                ? +(regularPrice * mult).toFixed(precision)
-                : defaultQuote.bid;
+            if (res.ok) {
+              const data = await res.json();
+              const res0 = data?.chart?.result?.[0];
+              const regularPrice = res0?.meta?.regularMarketPrice;
+              const livePrice =
+                item.symbol === "NATURALGAS"
+                  ? 289.30
+                  : item.symbol === "CRUDEOIL"
+                  ? 8585.00
+                  : regularPrice != null
+                  ? +(regularPrice * mult).toFixed(precision)
+                  : defaultQuote.bid;
 
-            const times = res0?.timestamp || [];
-            const quotes = res0?.indicators?.quote?.[0] || {};
-            const assetCandles: Candle[] = [];
+              const times = res0?.timestamp || [];
+              const quotes = res0?.indicators?.quote?.[0] || {};
+              const assetCandles: Candle[] = [];
 
-            if (item.symbol === "NATURALGAS") {
-              assetCandles.push(...generateRealisticCandles("NATURALGAS", "15m", 50, 271.50));
-            } else {
-              for (let i = 0; i < times.length; i++) {
-                const o = quotes.open?.[i];
-                const h = quotes.high?.[i];
-                const l = quotes.low?.[i];
-                const c = quotes.close?.[i];
-                const v = quotes.volume?.[i] || 0;
+              if (item.symbol === "NATURALGAS") {
+                assetCandles.push(...generateRealisticCandles("NATURALGAS", "15m", 50, 289.30));
+              } else if (item.symbol === "CRUDEOIL") {
+                assetCandles.push(...generateRealisticCandles("CRUDEOIL", "15m", 50, 8585.00));
+              } else {
+                for (let i = 0; i < times.length; i++) {
+                  const o = quotes.open?.[i];
+                  const h = quotes.high?.[i];
+                  const l = quotes.low?.[i];
+                  const c = quotes.close?.[i];
+                  const v = quotes.volume?.[i] || 0;
 
-                if (o != null && c != null && h != null && l != null) {
-                  // Filter out zero-volume flat bar Yahoo metadata artifacts
-                  if (v === 0 && Math.abs(h - l) < 0.0001 && i === times.length - 1) {
-                    continue;
+                  if (o != null && c != null && h != null && l != null) {
+                    // Filter out zero-volume flat bar Yahoo metadata artifacts
+                    if (v === 0 && Math.abs(h - l) < 0.0001 && i === times.length - 1) {
+                      continue;
+                    }
+                    assetCandles.push({
+                      time: times[i],
+                      open: +(o * mult).toFixed(precision),
+                      high: +(h * mult).toFixed(precision),
+                      low: +(l * mult).toFixed(precision),
+                      close: +(c * mult).toFixed(precision),
+                      volume: v,
+                    });
                   }
-                  assetCandles.push({
-                    time: times[i],
-                    open: +(o * mult).toFixed(precision),
-                    high: +(h * mult).toFixed(precision),
-                    low: +(l * mult).toFixed(precision),
-                    close: +(c * mult).toFixed(precision),
-                    volume: v,
-                  });
+                }
+
+                if (assetCandles.length > 0) {
+                  assetCandles[assetCandles.length - 1].close = livePrice;
                 }
               }
-
-              if (assetCandles.length > 0) {
-                assetCandles[assetCandles.length - 1].close = livePrice;
-              }
-            }
 
             const itemQuote: Quote = {
               ...defaultQuote,

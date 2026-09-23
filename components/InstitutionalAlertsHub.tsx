@@ -29,6 +29,7 @@ interface InstitutionalAlertsHubProps {
   onOpenDispatcherWithAlert?: (alert: InstitutionalAlert) => void;
   onOpenMT5PanelWithAlert?: (alert: InstitutionalAlert) => void;
   onOpenDemoPanelWithAlert?: (alert: InstitutionalAlert) => void;
+  onClearAlerts?: () => void;
 }
 
 type FilterCategory =
@@ -82,6 +83,7 @@ export const InstitutionalAlertsHub: React.FC<InstitutionalAlertsHubProps> = ({
   onOpenDispatcherWithAlert,
   onOpenMT5PanelWithAlert,
   onOpenDemoPanelWithAlert,
+  onClearAlerts,
 }) => {
   const [filter, setFilter] = useState<FilterCategory>("all");
   const [soundEnabled, setSoundEnabled] = useState(true);
@@ -186,6 +188,17 @@ Confidence: ${alert.confidenceScore}%`;
                 title="Enable browser notifications"
               >
                 <span>Allow Notifications</span>
+              </button>
+            )}
+
+            {/* Clear All Alerts */}
+            {onClearAlerts && alerts.length > 0 && (
+              <button
+                onClick={onClearAlerts}
+                className="px-2.5 py-1 rounded bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 border border-rose-500/40 text-[11px] font-mono transition-colors"
+                title="Clear all active alerts"
+              >
+                Clear All Alerts
               </button>
             )}
 

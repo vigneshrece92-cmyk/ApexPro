@@ -8,16 +8,68 @@ export interface SymbolOptionSpec {
 }
 
 export const SYMBOL_OPTION_SPECS: Record<string, SymbolOptionSpec> = {
-  NIFTY: { lotSize: 25, strikeStep: 50, defaultIV: 13.2, currency: "₹" },
+  NIFTY: { lotSize: 65, strikeStep: 50, defaultIV: 13.2, currency: "₹" },
   BANKNIFTY: { lotSize: 15, strikeStep: 100, defaultIV: 15.8, currency: "₹" },
-  FINNIFTY: { lotSize: 25, strikeStep: 50, defaultIV: 14.0, currency: "₹" },
+  FINNIFTY: { lotSize: 65, strikeStep: 50, defaultIV: 14.0, currency: "₹" },
   SENSEX: { lotSize: 10, strikeStep: 100, defaultIV: 13.0, currency: "₹" },
   CRUDEOIL: { lotSize: 100, strikeStep: 50, defaultIV: 28.5, currency: "₹" },
   NATURALGAS: { lotSize: 1250, strikeStep: 5, defaultIV: 45.0, currency: "₹" },
 };
 
+const MONTH_NAMES = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
+
+/**
+ * Computes authentic upcoming expiry date for Indian Equity & Commodity derivatives.
+ * Formats as "DD-MMM" (e.g. "24-SEP" or "19-OCT")
+ */
+export function getUpcomingOptionExpiry(symbol: AssetSymbol | string): string {
+  const now = new Date();
+  const istDate = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
+  const currentDay = istDate.getDay(); // 0 = Sun ... 4 = Thu ... 6 = Sat
+
+  if (symbol === "CRUDEOIL") {
+    const expDate = new Date(istDate);
+    if (istDate.getDate() > 19) {
+      expDate.setMonth(expDate.getMonth() + 1);
+    }
+    expDate.setDate(19);
+    return `19-${MONTH_NAMES[expDate.getMonth()]}`;
+  }
+
+  if (symbol === "NATURALGAS") {
+    const expDate = new Date(istDate);
+    if (istDate.getDate() > 26) {
+      expDate.setMonth(expDate.getMonth() + 1);
+    }
+    expDate.setDate(26);
+    return `26-${MONTH_NAMES[expDate.getMonth()]}`;
+  }
+
+  // NSE Indices:
+  // NIFTY: Thursday (4)
+  // BANKNIFTY: Wednesday (3)
+  // FINNIFTY: Tuesday (2)
+  // SENSEX: Friday (5)
+  let targetDow = 4;
+  if (symbol === "BANKNIFTY") targetDow = 3;
+  else if (symbol === "FINNIFTY") targetDow = 2;
+  else if (symbol === "SENSEX") targetDow = 5;
+
+  let daysAhead = (targetDow - currentDay + 7) % 7;
+  if (daysAhead === 0 && (istDate.getHours() > 15 || (istDate.getHours() === 15 && istDate.getMinutes() >= 30))) {
+    daysAhead = 7;
+  }
+
+  const expDate = new Date(istDate);
+  expDate.setDate(istDate.getDate() + daysAhead);
+
+  const dd = String(expDate.getDate()).padStart(2, "0");
+  const mmm = MONTH_NAMES[expDate.getMonth()];
+  return `${dd}-${mmm}`;
+}
+
 export function getOptionSpec(symbol: AssetSymbol | string): SymbolOptionSpec {
-  return SYMBOL_OPTION_SPECS[symbol] || { lotSize: 25, strikeStep: 50, defaultIV: 15.0, currency: "₹" };
+  return SYMBOL_OPTION_SPECS[symbol] || { lotSize: 65, strikeStep: 50, defaultIV: 15.0, currency: "₹" };
 }
 
 export function calculateATMStrike(spotPrice: number, strikeStep: number): number {
@@ -86,6 +138,7 @@ export function generateOptionChain(
 ): OptionChainItem[] {
   const spec = getOptionSpec(symbol);
   const atmStrike = calculateATMStrike(spotPrice, spec.strikeStep);
+  const expiry = getUpcomingOptionExpiry(symbol);
   const chain: OptionChainItem[] = [];
 
   const halfStrikes = 5;
@@ -100,7 +153,7 @@ export function generateOptionChain(
       symbol: symbol as AssetSymbol,
       strike,
       type: "CE",
-      expiry: "Weekly Active",
+      expiry,
       spotPrice,
       premiumBid: +Math.max(0.5, callCalc.premium - 0.5).toFixed(2),
       premiumAsk: +(callCalc.premium + 0.5).toFixed(2),
@@ -114,7 +167,7 @@ export function generateOptionChain(
       symbol: symbol as AssetSymbol,
       strike,
       type: "PE",
-      expiry: "Weekly Active",
+      expiry,
       spotPrice,
       premiumBid: +Math.max(0.5, putCalc.premium - 0.5).toFixed(2),
       premiumAsk: +(putCalc.premium + 0.5).toFixed(2),
@@ -144,12 +197,13 @@ export function getRecommendedOptionContract(
   const atmStrike = calculateATMStrike(spotPrice, spec.strikeStep);
   const type: OptionType = action === "BUY CE" ? "CE" : "PE";
   const est = estimateOptionPremium(spotPrice, atmStrike, type, symbol);
+  const expiry = getUpcomingOptionExpiry(symbol);
 
   return {
     symbol: symbol as AssetSymbol,
     strike: atmStrike,
     type,
-    expiry: "Current Weekly",
+    expiry,
     spotPrice,
     premiumBid: +Math.max(0.5, est.premium - 0.4).toFixed(2),
     premiumAsk: +(est.premium + 0.4).toFixed(2),

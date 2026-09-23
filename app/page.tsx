@@ -361,6 +361,12 @@ export default function TerminalDashboard() {
     setIsMT5PanelOpen(true);
   };
 
+  const handleClearAlerts = () => {
+    setAlerts([]);
+    notifiedTicketsRef.current.clear();
+    notifiedClosedTicketsRef.current.clear();
+  };
+
   return (
     <div className="min-h-screen bg-terminal-bg text-terminal-text flex flex-col">
       {/* Top Barometer & Header */}
@@ -525,6 +531,7 @@ export default function TerminalDashboard() {
         onOpenDispatcherWithAlert={handleOpenDispatcherWithAlert}
         onOpenMT5PanelWithAlert={handleOpenMT5WithAlert}
         onOpenDemoPanelWithAlert={handleOpenDemoWithAlert}
+        onClearAlerts={handleClearAlerts}
       />
       <InternalDemoTradingPanel
         isOpen={isDemoPanelOpen}

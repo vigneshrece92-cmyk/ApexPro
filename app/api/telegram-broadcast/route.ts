@@ -9,7 +9,13 @@ const DEDUP_WINDOW_MS = 600000; // 10 minutes deduplication window
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { message, botToken, chatId } = body;
+    const { message, botToken, chatId, isTest, clearCache } = body;
+
+    if (clearCache) {
+      recentMessageHashes.clear();
+      lastBroadcastTimestamp = 0;
+      return NextResponse.json({ success: true, message: "Telegram throttle cache cleared." });
+    }
 
     if (!message || typeof message !== "string") {
       return NextResponse.json({ success: false, error: "No message provided" }, { status: 400 });
@@ -17,10 +23,11 @@ export async function POST(req: NextRequest) {
 
     const now = Date.now();
 
-    // 1. Minimum global cooldown throttle
+    // 1. Minimum global cooldown throttle (5 seconds for responsive testing)
+    const throttleMs = isTest ? 2000 : 5000;
     const timeSinceLast = now - lastBroadcastTimestamp;
-    if (timeSinceLast < MIN_COOLDOWN_MS) {
-      console.warn(`[Telegram Firewall] Throttled message. Cooldown active (${Math.round((MIN_COOLDOWN_MS - timeSinceLast) / 1000)}s remaining)`);
+    if (timeSinceLast < throttleMs) {
+      console.warn(`[Telegram Firewall] Throttled message. Cooldown active (${Math.round((throttleMs - timeSinceLast) / 1000)}s remaining)`);
       return NextResponse.json({
         success: true,
         throttled: true,
@@ -28,17 +35,23 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // 2. Content deduplication check
-    // Normalize message (strip timestamps) to catch duplicate order messages
-    const normalizedKey = message.replace(/Ticket:\s*#?\d+/g, "").replace(/\d{2}:\d{2}:\d{2}/g, "").trim();
-    const lastSeen = recentMessageHashes.get(normalizedKey);
-    if (lastSeen && now - lastSeen < DEDUP_WINDOW_MS) {
-      console.warn("[Telegram Firewall] Duplicate message dropped within 10m window.");
-      return NextResponse.json({
-        success: true,
-        throttled: true,
-        message: "Duplicate alert dropped within anti-spam window.",
-      });
+    // 2. Content deduplication check (differentiates distinct tickets)
+    if (!isTest) {
+      const isDistinctTrade = message.includes("Ticket:");
+      const normalizedKey = isDistinctTrade
+        ? message.replace(/\d{2}:\d{2}:\d{2}/g, "").trim()
+        : message.replace(/Ticket:\s*#?\d+/g, "").replace(/\d{2}:\d{2}:\d{2}/g, "").trim();
+
+      const lastSeen = recentMessageHashes.get(normalizedKey);
+      if (lastSeen && now - lastSeen < DEDUP_WINDOW_MS) {
+        console.warn("[Telegram Firewall] Duplicate message dropped within window.");
+        return NextResponse.json({
+          success: true,
+          throttled: true,
+          message: "Duplicate alert dropped within anti-spam window.",
+        });
+      }
+      recentMessageHashes.set(normalizedKey, now);
     }
 
     // Cleanup old hashes periodically
@@ -74,7 +87,6 @@ export async function POST(req: NextRequest) {
     }
 
     lastBroadcastTimestamp = now;
-    recentMessageHashes.set(normalizedKey, now);
 
     return NextResponse.json({ success: true, message: "Broadcast sent to Telegram!" });
   } catch (err) {

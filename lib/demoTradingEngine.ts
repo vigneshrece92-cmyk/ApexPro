@@ -130,29 +130,28 @@ export const INITIAL_ACCOUNT_STATE: DemoAccountState = {
     risk_percent: 1.0,
     market_mode: "24_7_PRACTICE",
     strategy_mode: "VOLUME_PROFILE_ONLY",
-    logs: [
-      {
-        id: "init-1",
-        timestamp: Date.now() - 300000,
-        type: "info",
-        message: "Apex Terminal Indian F&O & MCX Broker Engine initialized with ₹1,00,000.00 capital (1:1000 Leverage).",
-      },
-      {
-        id: "init-2",
-        timestamp: Date.now() - 180000,
-        type: "info",
-        message: "Autonomous Pivot-Anchored Volume Profile (PAVP) Bot active — monitoring strictly VAH, VAL & POC levels.",
-      },
-    ],
+    logs: [],
   },
 };
+
+export function clearDemoLogs(state: DemoAccountState): DemoAccountState {
+  const nextState: DemoAccountState = {
+    ...state,
+    auto_bot: {
+      ...state.auto_bot,
+      logs: [],
+    },
+  };
+  saveDemoAccount(nextState);
+  return nextState;
+}
 
 /**
  * Load demo account state from browser localStorage or default
  */
 function getDefaultPrice(sym?: string): number {
-  if (sym === "NATURALGAS") return 271.50;
-  if (sym === "CRUDEOIL") return 8840.00;
+  if (sym === "NATURALGAS") return 289.30;
+  if (sym === "CRUDEOIL") return 8585.00;
   if (sym === "BANKNIFTY") return 50150.00;
   if (sym === "SENSEX") return 76850.00;
   if (sym === "FINNIFTY") return 23450.00;
@@ -921,7 +920,7 @@ export function evaluateAutoBot(
       id: `bot-pavp-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
       timestamp: Date.now(),
       type: "trade",
-      message: `⚡ [15M PAVP Auto-Trade] ${latestSignal.label} triggered on ${quote.symbol}! Auto-executing 1 Lot (${optSpec.lotSize} Qty) ${quote.symbol} ${optContract.strike} ${optContract.type} @ ${currencySym}${optContract.premiumAsk.toFixed(2)}. SL: ${currencySym}${latestSignal.sl}, TP1 (POC): ${currencySym}${latestSignal.tp1}.`,
+      message: `⚡ [15M PAVP Auto-Trade] ${latestSignal.label} triggered on ${quote.symbol}! Auto-executing 1 Lot (${optSpec.lotSize} Qty) ${quote.symbol} ${optContract.strike} ${optContract.type} ${optContract.expiry} @ ${currencySym}${optContract.premiumAsk.toFixed(2)}. SL: ${currencySym}${latestSignal.sl}, TP1 (POC): ${currencySym}${latestSignal.tp1}.`,
     };
 
     const currentLogs = Array.isArray(state.auto_bot?.logs) ? state.auto_bot.logs : [];
@@ -941,7 +940,7 @@ export function evaluateAutoBot(
       sl: latestSignal.sl,
       tp: latestSignal.tp1,
       comment: `15M PAVP: ${latestSignal.label}`,
-      optionContractName: `${quote.symbol} ${optContract.strike} ${optContract.type}`,
+      optionContractName: `${quote.symbol} ${optContract.strike} ${optContract.type} ${optContract.expiry}`,
       optionType: optContract.type,
       optionStrike: optContract.strike,
       optionEntryPremium: optContract.premiumAsk,
@@ -975,7 +974,7 @@ export function evaluateAutoBot(
         id: `bot-alert-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
         timestamp: Date.now(),
         type: "trade",
-        message: `⚡ [15M PAVP Alert Auto-Trade] ${alert.title} confirmed on ${quote.symbol}! Auto-executing 1 Lot (${optSpec.lotSize} Qty) ${quote.symbol} ${optContract.strike} ${optContract.type} @ ${currencySym}${optContract.premiumAsk.toFixed(2)}. SL: ${currencySym}${alert.stopLoss}, TP1 (POC): ${currencySym}${alert.takeProfit1}.`,
+        message: `⚡ [15M PAVP Alert Auto-Trade] ${alert.title} confirmed on ${quote.symbol}! Auto-executing 1 Lot (${optSpec.lotSize} Qty) ${quote.symbol} ${optContract.strike} ${optContract.type} ${optContract.expiry} @ ${currencySym}${optContract.premiumAsk.toFixed(2)}. SL: ${currencySym}${alert.stopLoss}, TP1 (POC): ${currencySym}${alert.takeProfit1}.`,
       };
 
       const currentLogs = Array.isArray(state.auto_bot?.logs) ? state.auto_bot.logs : [];
@@ -995,7 +994,7 @@ export function evaluateAutoBot(
         sl: alert.stopLoss,
         tp: alert.takeProfit1,
         comment: `15M PAVP: ${alert.patternType}`,
-        optionContractName: `${quote.symbol} ${optContract.strike} ${optContract.type}`,
+        optionContractName: `${quote.symbol} ${optContract.strike} ${optContract.type} ${optContract.expiry}`,
         optionType: optContract.type,
         optionStrike: optContract.strike,
         optionEntryPremium: optContract.premiumAsk,

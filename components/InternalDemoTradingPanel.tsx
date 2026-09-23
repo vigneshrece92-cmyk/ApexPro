@@ -61,7 +61,7 @@ export const InternalDemoTradingPanel: React.FC<InternalDemoTradingPanelProps> =
   const optSpec = getOptionSpec(activeSymbol);
   const multiplier = optSpec.lotSize || 25;
 
-  const currentPriceForSym = liveQuote?.bid || (activeSymbol === "NATURALGAS" ? 271.5 : activeSymbol === "CRUDEOIL" ? 8840.0 : 23320.0);
+  const currentPriceForSym = liveQuote?.bid || (activeSymbol === "NATURALGAS" ? 289.30 : activeSymbol === "CRUDEOIL" ? 8585.0 : 23320.0);
   const defaultDist = activeSymbol === "NATURALGAS" ? 2.5 : activeSymbol === "CRUDEOIL" ? 25.0 : activeSymbol === "BANKNIFTY" ? 70.0 : 35.0;
 
   const [stopLoss, setStopLoss] = useState<number>(() => round2(currentPriceForSym - defaultDist));
@@ -127,7 +127,7 @@ export const InternalDemoTradingPanel: React.FC<InternalDemoTradingPanelProps> =
       sl: stopLoss,
       tp: takeProfit,
       comment: prefillSetup ? "PAVP_Retest" : "Manual Option Entry",
-      optionContractName: opt ? `${activeSymbol} ${opt.strike} ${opt.type}` : undefined,
+      optionContractName: opt ? `${activeSymbol} ${opt.strike} ${opt.type} ${opt.expiry} (${multiplier} Qty)` : undefined,
       optionType: opt?.type,
       optionStrike: opt?.strike,
       optionEntryPremium: opt?.premiumAsk,
@@ -185,6 +185,7 @@ export const InternalDemoTradingPanel: React.FC<InternalDemoTradingPanelProps> =
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          isTest: true,
           message: `⚡ <b>Apex Pro Terminal — Telegram Broadcast Active</b>\n━━━━━━━━━━━━━━━━━━━━\n<b>Status:</b> 🟢 Connected\n<b>Bot:</b> @profitcatcher_bot\n<b>Account Balance:</b> ₹${account.balance.toLocaleString("en-IN", { minimumFractionDigits: 2 })}\n<b>Open Positions:</b> ${account.open_positions.length}\n<b>PAVP Auto-Bot:</b> ${account.auto_bot.enabled ? "ACTIVE 🟢" : "PAUSED ⏸️"}\n<b>Timestamp:</b> ${new Date().toLocaleTimeString()} IST`,
         }),
       });
@@ -208,6 +209,27 @@ export const InternalDemoTradingPanel: React.FC<InternalDemoTradingPanelProps> =
     } finally {
       setIsTestingTg(false);
     }
+  };
+
+  const handleClearLogs = () => {
+    const updatedState: DemoAccountState = {
+      ...account,
+      auto_bot: {
+        ...account.auto_bot,
+        logs: [],
+      },
+    };
+    saveDemoAccount(updatedState);
+    onUpdateAccount(updatedState);
+    fetch("/api/telegram-broadcast", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ clearCache: true }),
+    }).catch(() => {});
+    setStatusMessage({
+      type: "success",
+      text: "All old bot audit logs have been cleared.",
+    });
   };
 
   const handleReset = () => {
@@ -609,6 +631,13 @@ export const InternalDemoTradingPanel: React.FC<InternalDemoTradingPanelProps> =
                     title="Send test ping to Telegram channel"
                   >
                     {isTestingTg ? "Pinging..." : "Test Ping"}
+                  </button>
+                  <button
+                    onClick={handleClearLogs}
+                    className="text-[10px] px-2 py-0.5 rounded bg-rose-600/20 hover:bg-rose-600/40 text-rose-300 hover:text-white border border-rose-500/30 font-mono transition-all"
+                    title="Clear all bot audit and alert logs"
+                  >
+                    Clear Logs
                   </button>
                   <span>{(account.auto_bot?.logs || []).length} events</span>
                 </div>
