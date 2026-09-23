@@ -1096,14 +1096,18 @@ export function calculatePivotAnchoredVolumeProfile(
     if (recentPivots.length > 0) {
       // Prioritize the dominant structural swing extreme that originated the current market cycle
       const currentPrice = candles[candles.length - 1].close;
+      const sessionMin = Math.min(...candles.map((c) => c.low));
+      const sessionMax = Math.max(...candles.map((c) => c.high));
       let bestPivot = recentPivots[0];
       let maxScore = -1;
 
       for (const p of recentPivots) {
         const span = Math.abs(p.price - currentPrice);
         const barsBack = candles.length - 1 - p.index;
-        // Prioritize swings formed >= 8 bars ago that define the current trading range
-        const score = span * (barsBack >= 8 ? 1.8 : 0.7);
+        const isSessionExtreme = p.price === sessionMin || p.price === sessionMax;
+        const volWeight = Math.min(3.0, (p.volume || 100) / Math.max(1, avgVol));
+        const extremeMultiplier = isSessionExtreme ? 3.5 : 1.0;
+        const score = span * (barsBack >= 6 ? 1.8 : 0.7) * (1 + volWeight) * extremeMultiplier;
         if (score > maxScore) {
           maxScore = score;
           bestPivot = p;

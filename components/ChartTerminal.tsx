@@ -262,7 +262,7 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
     const anchorPriceY = pavp.pivot ? series.priceToCoordinate(pavp.pivot.price) : null;
 
     const maxVol = Math.max(...pavp.rows.map((r) => r.volume), 1);
-    const maxHistWidth = Math.min(260, Math.max(120, (latestX - anchorX) * 0.42));
+    const maxHistWidth = Math.min(120, Math.max(45, (latestX - anchorX) * 0.22));
 
     const rows = pavp.rows.map((r, i) => {
       const y = series.priceToCoordinate(r.price);
@@ -395,6 +395,24 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
       }));
       candleSeries.setData(formattedCandles);
 
+      // Real Exchange Volume Histogram at Bottom (18% height, matching TradingView)
+      const volumeSeries = chart.addHistogramSeries({
+        priceFormat: { type: "volume" },
+        priceScaleId: "",
+      });
+      volumeSeries.priceScale().applyOptions({
+        scaleMargins: {
+          top: 0.82,
+          bottom: 0,
+        },
+      });
+      const volData = candles.map((c) => ({
+        time: c.time as any,
+        value: c.volume || 1000,
+        color: c.close >= c.open ? "rgba(8, 153, 129, 0.45)" : "rgba(242, 54, 69, 0.45)",
+      }));
+      volumeSeries.setData(volData);
+
       // Real-Time Streaming Live Price Line
       const liveLine = candleSeries.createPriceLine({
         price: quote.bid,
@@ -415,7 +433,7 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
       if (showVP && pavp && pavp.poc > 0) {
         candleSeries.createPriceLine({
           price: pavp.poc,
-          color: "#EF4444",
+          color: "#F23645",
           lineWidth: 2,
           lineStyle: lwc.LineStyle.Solid,
           axisLabelVisible: true,
@@ -424,19 +442,19 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
 
         candleSeries.createPriceLine({
           price: pavp.vah,
-          color: "#2563EB",
+          color: "#2962FF",
           lineWidth: 1.5,
           lineStyle: lwc.LineStyle.Dashed,
-          axisLabelVisible: true,
+          axisLabelVisible: false,
           title: `VAH ${pavp.vah}`,
         });
 
         candleSeries.createPriceLine({
           price: pavp.val,
-          color: "#2563EB",
+          color: "#2962FF",
           lineWidth: 1.5,
           lineStyle: lwc.LineStyle.Dashed,
-          axisLabelVisible: true,
+          axisLabelVisible: false,
           title: `VAL ${pavp.val}`,
         });
       }
@@ -1245,7 +1263,7 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
                         y1={overlayCoords.vahY}
                         x2={overlayCoords.latestX || 500}
                         y2={overlayCoords.vahY}
-                        stroke="#2563EB"
+                        stroke="#2962FF"
                         strokeWidth={2}
                       />
                       <line
@@ -1253,7 +1271,7 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
                         y1={overlayCoords.valY}
                         x2={overlayCoords.latestX || 500}
                         y2={overlayCoords.valY}
-                        stroke="#2563EB"
+                        stroke="#2962FF"
                         strokeWidth={2}
                       />
                     </g>
@@ -1268,7 +1286,7 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
                       y1={overlayCoords.pocY}
                       x2={overlayCoords.latestX || 500}
                       y2={overlayCoords.pocY}
-                      stroke="#EF4444"
+                      stroke="#F23645"
                       strokeWidth={2.5}
                     />
                   )}
@@ -1278,8 +1296,8 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
                   if (row.y < -50 || row.y > 2000) return null;
                   const startX = Math.max(0, overlayCoords.anchorX || 0);
                   const barY = row.y - row.height / 2;
-                  const barFill = row.isPOC ? "#EF4444" : row.isValueArea ? "#38BDF8" : "#475569";
-                  const barOpacity = row.isPOC ? 0.95 : row.isValueArea ? 0.8 : 0.35;
+                  const barFill = row.isPOC ? "#F23645" : row.isValueArea ? "#F59E0B" : "#64748B";
+                  const barOpacity = row.isPOC ? 0.95 : row.isValueArea ? 0.85 : 0.40;
 
                   return (
                     <g key={idx} className="vp-bar">
@@ -1292,21 +1310,12 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
                         opacity={barOpacity}
                         rx={1}
                       />
-                      {row.isPOC && (
-                        <rect
-                          x={startX}
-                          y={barY + row.height / 2 - 1}
-                          width={Math.max(row.width, (overlayCoords.latestX || 500) - startX)}
-                          height={2.5}
-                          fill="#EF4444"
-                          opacity={0.9}
-                        />
-                      )}
+
                     </g>
                   );
                 })}
 
-                {/* 3. Anchor Pivot Tag */}
+                {/* 3. Authentic TradingView Anchor Pivot Tag (dgtrd PAVP Style) */}
                 {overlayCoords.pivot &&
                   overlayCoords.anchorX !== null &&
                   overlayCoords.anchorPriceY !== null &&
@@ -1315,29 +1324,35 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
                       transform={`translate(${overlayCoords.anchorX}, ${
                         overlayCoords.pivot.type === "low"
                           ? Math.min(
-                              (chartContainerRef.current?.clientHeight || 450) - 35,
-                              overlayCoords.anchorPriceY + 14
+                              (chartContainerRef.current?.clientHeight || 450) - 38,
+                              overlayCoords.anchorPriceY + 12
                             )
-                          : Math.max(10, overlayCoords.anchorPriceY - 34)
+                          : Math.max(12, overlayCoords.anchorPriceY - 38)
                       })`}
                     >
+                      {/* Anchor Triangle Pointer connecting to candle wick */}
+                      {overlayCoords.pivot.type === "low" ? (
+                        <polygon points="-4,0 4,0 0,-6" fill="#2962FF" />
+                      ) : (
+                        <polygon points="-4,27 4,27 0,33" fill="#2962FF" />
+                      )}
                       <rect
-                        x={-46}
+                        x={-50}
                         y={0}
-                        width={92}
-                        height={25}
-                        rx={4}
-                        fill="#1E293B"
-                        stroke="#3B82F6"
-                        strokeWidth={1}
-                        opacity={0.92}
+                        width={100}
+                        height={27}
+                        rx={5}
+                        fill="#0F172A"
+                        stroke="#2962FF"
+                        strokeWidth={1.5}
+                        opacity={0.96}
                       />
                       <text
                         x={0}
-                        y={11}
+                        y={11.5}
                         textAnchor="middle"
-                        fill="#F8FAFC"
-                        fontSize={9}
+                        fill="#FFFFFF"
+                        fontSize={9.5}
                         fontWeight="bold"
                         fontFamily="monospace"
                       >
@@ -1348,16 +1363,17 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
                       </text>
                       <text
                         x={0}
-                        y={21}
+                        y={22}
                         textAnchor="middle"
-                        fill="#94A3B8"
-                        fontSize={7.5}
+                        fill="#93C5FD"
+                        fontSize={8}
                         fontFamily="monospace"
+                        fontWeight="bold"
                       >
                         {overlayCoords.pivot.volume
                           ? `${
                               overlayCoords.pivot.volume > 1000
-                                ? (overlayCoords.pivot.volume / 1000).toFixed(1) + "K"
+                                ? (overlayCoords.pivot.volume / 1000).toFixed(2) + "K"
                                 : overlayCoords.pivot.volume
                             } Vol`
                           : "PIVOT"}
