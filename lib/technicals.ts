@@ -1,5 +1,6 @@
 import {
   Candle,
+  TimeFrame,
   TechnicalIndicatorSet,
   AIAnalysisResult,
   TradeSignalAction,
@@ -289,8 +290,39 @@ export function computeSMC(candles: Candle[], precision = 2): SMCData {
   };
 }
 
+/**
+ * Institutional Pivot-Anchored Volume Profile (PAVP) Timeframe Configurations
+ * Calibrated against TradingView & PineScript v6 (dgtrd reference)
+ */
+export function getPAVPConfigForTimeframe(timeframe: TimeFrame = "15m"): {
+  pvtLength: number;
+  profileLevels: number;
+  valueAreaPct: number;
+} {
+  switch (timeframe) {
+    case "1m":
+      return { pvtLength: 8, profileLevels: 24, valueAreaPct: 0.68 };
+    case "5m":
+      return { pvtLength: 10, profileLevels: 28, valueAreaPct: 0.68 };
+    case "15m":
+      return { pvtLength: 12, profileLevels: 28, valueAreaPct: 0.68 };
+    case "1h":
+      return { pvtLength: 10, profileLevels: 32, valueAreaPct: 0.68 };
+    case "4h":
+      return { pvtLength: 8, profileLevels: 32, valueAreaPct: 0.68 };
+    case "1d":
+      return { pvtLength: 6, profileLevels: 32, valueAreaPct: 0.68 };
+    default:
+      return { pvtLength: 12, profileLevels: 28, valueAreaPct: 0.68 };
+  }
+}
+
 // Compute full indicator set
-export function computeTechnicals(candles: Candle[], precision = 2): TechnicalIndicatorSet {
+export function computeTechnicals(
+  candles: Candle[],
+  precision = 2,
+  timeframe: TimeFrame = "15m"
+): TechnicalIndicatorSet {
   if (!candles || candles.length === 0) {
     return {
       ema20: 0,
@@ -322,6 +354,8 @@ export function computeTechnicals(candles: Candle[], precision = 2): TechnicalIn
   const macdLine = (ema12[ema12.length - 1] || 0) - (ema26[ema26.length - 1] || 0);
   const macdSignal = macdLine * 0.85;
 
+  const pavpConfig = getPAVPConfigForTimeframe(timeframe);
+
   return {
     ema20: +lastEma20.toFixed(precision),
     ema50: +lastEma50.toFixed(precision),
@@ -344,7 +378,13 @@ export function computeTechnicals(candles: Candle[], precision = 2): TechnicalIn
     },
     smc: computeSMC(candles, precision),
     volumeProfile: calculateVolumeProfile(candles, 32, 0.70, precision),
-    pavp: calculatePivotAnchoredVolumeProfile(candles, 15, 28, 0.68, precision),
+    pavp: calculatePivotAnchoredVolumeProfile(
+      candles,
+      pavpConfig.pvtLength,
+      pavpConfig.profileLevels,
+      pavpConfig.valueAreaPct,
+      precision
+    ),
     sessionLevels: calculateSessionLevels(candles, precision),
   };
 }
@@ -862,58 +902,137 @@ export function detectChartSignals(
 
 /**
  * Detect Pivot High & Pivot Low (ta.pivothigh & ta.pivotlow)
- * Exact mathematical port of PineScript pivot point functions
+ * Exact mathematical port of PineScript pivot point functions with real-time confirmation
  */
-export function findPivotPoints(candles: Candle[], pvtLength = 15): PivotPoint[] {
-  if (!candles || candles.length < pvtLength * 2 + 1) {
-    if (candles && candles.length >= 7) {
-      return findPivotPoints(candles, Math.max(3, Math.floor(candles.length / 4)));
+export function findPivotPoints(candles: Candle[], pvtLength = 12): PivotPoint[] {
+  if (!candles || candles.length < 5) return [];
+
+  const leftBars = Math.max(3, pvtLength);
+  // Asymmetric confirmation: requires rightBars after the pivot for real-time confirmation
+  const rightBars = Math.min(leftBars, Math.max(2, Math.floor(leftBars / 3)));
+
+  if (candles.length < leftBars + rightBars + 1) {
+    if (candles.length >= 5) {
+      return findPivotPoints(candles, Math.max(2, Math.floor(candles.length / 4)));
     }
     return [];
   }
 
-  const pivots: PivotPoint[] = [];
+  const rawPivots: { index: number; time: number; price: number; type: "high" | "low"; volume: number }[] = [];
 
-  for (let i = pvtLength; i < candles.length - pvtLength; i++) {
+  for (let i = leftBars; i < candles.length - rightBars; i++) {
     const curHigh = candles[i].high;
     const curLow = candles[i].low;
 
     let isHigh = true;
     let isLow = true;
 
-    for (let j = 1; j <= pvtLength; j++) {
-      if (candles[i - j].high >= curHigh || candles[i + j].high > curHigh) {
-        isHigh = false;
-      }
-      if (candles[i - j].low <= curLow || candles[i + j].low < curLow) {
-        isLow = false;
-      }
+    for (let j = 1; j <= leftBars; j++) {
+      if (candles[i - j].high > curHigh) isHigh = false;
+      if (candles[i - j].low < curLow) isLow = false;
       if (!isHigh && !isLow) break;
     }
 
+    if (isHigh || isLow) {
+      for (let j = 1; j <= rightBars; j++) {
+        if (candles[i + j].high >= curHigh) isHigh = false;
+        if (candles[i + j].low <= curLow) isLow = false;
+        if (!isHigh && !isLow) break;
+      }
+    }
+
     if (isHigh) {
-      pivots.push({
+      rawPivots.push({
         index: i,
         time: candles[i].time,
         price: curHigh,
         type: "high",
-        pvtLength,
+        volume: candles[i].volume || 100,
       });
     }
     if (isLow) {
-      pivots.push({
+      rawPivots.push({
         index: i,
         time: candles[i].time,
         price: curLow,
         type: "low",
-        pvtLength,
+        volume: candles[i].volume || 100,
       });
     }
   }
 
-  // If no pivots were found with pvtLength, try with shorter length
-  if (pivots.length === 0 && pvtLength > 5) {
-    return findPivotPoints(candles, Math.max(4, Math.floor(pvtLength / 2)));
+  // If no pivots found, fallback to shorter length
+  if (rawPivots.length === 0 && leftBars > 4) {
+    return findPivotPoints(candles, Math.max(3, Math.floor(leftBars / 2)));
+  }
+
+  // If still no pivots found, locate the absolute lowest low and highest high in recent bars
+  if (rawPivots.length === 0 && candles.length >= 10) {
+    const lookback = Math.min(candles.length - 2, 35);
+    const slice = candles.slice(-lookback);
+    let minIdx = -1;
+    let minVal = Infinity;
+    let maxIdx = -1;
+    let maxVal = -Infinity;
+    for (let k = 0; k < slice.length; k++) {
+      if (slice[k].low < minVal) {
+        minVal = slice[k].low;
+        minIdx = candles.length - lookback + k;
+      }
+      if (slice[k].high > maxVal) {
+        maxVal = slice[k].high;
+        maxIdx = candles.length - lookback + k;
+      }
+    }
+    if (minIdx >= 0) {
+      rawPivots.push({
+        index: minIdx,
+        time: candles[minIdx].time,
+        price: minVal,
+        type: "low",
+        volume: candles[minIdx].volume || 100,
+      });
+    }
+    if (maxIdx >= 0 && maxIdx !== minIdx) {
+      rawPivots.push({
+        index: maxIdx,
+        time: candles[maxIdx].time,
+        price: maxVal,
+        type: "high",
+        volume: candles[maxIdx].volume || 100,
+      });
+    }
+    rawPivots.sort((a, b) => a.index - b.index);
+  }
+
+  // Calculate percentage change between successive opposite pivots (matching dgtrd PineScript)
+  const pivots: PivotPoint[] = [];
+  let prevHigh = 0;
+  let prevLow = 0;
+
+  for (const p of rawPivots) {
+    let changePercent = 0;
+    if (p.type === "low") {
+      if (prevHigh > 0) {
+        changePercent = -+(((prevHigh - p.price) / prevHigh) * 100).toFixed(2);
+      }
+      prevLow = p.price;
+    } else {
+      if (prevLow > 0) {
+        changePercent = +(((p.price - prevLow) / prevLow) * 100).toFixed(2);
+      }
+      prevHigh = p.price;
+    }
+
+    pivots.push({
+      index: p.index,
+      time: p.time,
+      price: p.price,
+      type: p.type,
+      pvtLength,
+      changePercent,
+      volume: p.volume,
+    });
   }
 
   return pivots;
@@ -1144,19 +1263,24 @@ export function detectPAVPSignals(
     const barsSinceLastSignal = i - lastSignalIdx;
 
     // 1. BUY PE @ VAH: Price reaches/sweeps VAH and displays bearish rejection
-    // Can be single candle or 2-candle confirmation (prev bar probed VAH, current bar confirms red)
+    // Supports false breakout re-entry (sweep above VAH then close back inside VA) and direct wick bounce
     const testedVAH = c.high >= vah - buffer || prevC.high >= vah - buffer;
     const closedBelowVAH = c.close <= vah + buffer * 0.4;
     const isBearishCandle = c.close < c.open || c.close < prevC.close;
     const upperWickRejection = (c.high - Math.max(c.open, c.close)) >= (Math.abs(c.close - c.open) * 0.4);
-    const isVAHPut = testedVAH && closedBelowVAH && (isBearishCandle || upperWickRejection);
+    const wasAboveVAH = c.high > vah || prevC.high > vah;
+    const reenteredBelowVAH = wasAboveVAH && c.close <= vah + buffer * 0.2 && (isBearishCandle || upperWickRejection);
+    const isVAHPut = (testedVAH && closedBelowVAH && (isBearishCandle || upperWickRejection)) || reenteredBelowVAH;
 
     // 2. BUY CE @ VAL: Price reaches/sweeps VAL and displays bullish rejection
+    // Supports sweep & reclaim (sweep below VAL then close back inside VA) and direct lower wick bounce
     const testedVAL = c.low <= val + buffer || prevC.low <= val + buffer;
     const closedAboveVAL = c.close >= val - buffer * 0.4;
     const isBullishCandle = c.close > c.open || c.close > prevC.close;
     const lowerWickRejection = (Math.min(c.open, c.close) - c.low) >= (Math.abs(c.close - c.open) * 0.4);
-    const isVALCall = testedVAL && closedAboveVAL && (isBullishCandle || lowerWickRejection);
+    const wasBelowVAL = c.low < val || prevC.low < val;
+    const reclaimedAboveVAL = wasBelowVAL && c.close >= val - buffer * 0.2 && (isBullishCandle || lowerWickRejection);
+    const isVALCall = (testedVAL && closedAboveVAL && (isBullishCandle || lowerWickRejection)) || reclaimedAboveVAL;
 
     // 3. BUY CE @ POC: Bullish retest of Point of Control (only when ample upside room to VAH exists)
     const distToVAH = vah - c.close;

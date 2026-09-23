@@ -1,0 +1,54 @@
+<USER_REQUEST>
+i want to create the same web app for indian options market and add crudeoil and naturalgas with only volume profile entry vah val poc...check this refrence its working perfectly   this time professional level bot  //@version=6
+// ══════════════════════════════════════════════════════════════════════════════════════════════════ //
+//# * ══════════════════════════════════════════════════════════════════════════════════════════════
+//# *
+//# * Study       : Volume Profile, Pivot Anchored
+//# * Author      : © dgtrd
+//# *
+//# * Revision History
+//# *  Release    : Jun 06, 2022 : Initial Release
+//# *  Update     : Sep 19, 2022 : Alerts addition, Improved labels, Naked PoC option, Bug correction
+//# *  Update     : Jan 2026     : Pine Script™ v6 migration, Pivot High/Low label logic refinement,
+//# *                              Tooltip clarity and consistency improvements
+//# *
+//# * ══════════════════════════════════════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════════════════════════════════════ //
+
+
+// ---------------------------------------------------------------------------------------------- //
+// Functions  ---------------------------------
+<truncated 26824 bytes>
+play = display)
+barcolor(vwcb and nzVolume > 0 ? nzVolume > vSMA * upThesh ? open < close ? #006400 : #910000 : nzVolume < vSMA * input.float(0.618, 'Light Bars below Volume Average × ', minval = .1, step = .1, inline = 'dummy3', group = group_volume_weighted_colored_bars, display = display) ? open < close ? #7FFFD4 : #FF9800 : open < close ? color.green : color.red : na, title = 'Volume Weighted Colored Bars', editable = false)
+
+// Volume Weighted Colored Bars ----------------------------------------------------------------- //
+// ---------------------------------------------------------------------------------------------- //
+// Alerts --------------------------------------------------------------------------------------- //
+
+priceTxt = str.tostring(close, format.mintick)
+tickerTxt = syminfo.ticker
+
+if ta.cross(close, priceLowest + (pocLevel + .50) * priceStep) and pointOfControl
+    alert(tickerTxt + ' : Pivots Volume Profile : Price touches/crosses Point Of Control Line, price ' + priceTxt)
+
+if ta.cross(close, priceLowest + (levelAbovePoc + 1.00) * priceStep) and valueAreaHigh
+    alert(tickerTxt + ' : Pivots Volume Profile : Price touches/crosses Value Area High Line, price ' + priceTxt)
+
+if ta.cross(close, priceLowest + (levelBelowPoc + 0.00) * priceStep) and valueAreaLow
+    alert(tickerTxt + ' : Pivots Volume Profile : Price touches/crosses Value Area Low Line, price ' + priceTxt)
+
+if nzVolume > vSMA * upThesh and vwcb
+    alert(tickerTxt + ' high volume, price ' + priceTxt)
+
+// Alerts --------------------------------------------------------------------------------------- //
+// ---------------------------------------------------------------------------------------------- //
+
+var table logo = table.new(position.bottom_right, 1, 1)
+if barstate.islast
+    table.cell(logo, 0, 0, '☼☾  ', text_size=size.normal, text_color=color.teal, tooltip = 'SoleMare Analytics')
+
+</USER_REQUEST>
+<ADDITIONAL_METADATA>
+The current local time is: 2026-09-22T21:03:29+05:30.
+</ADDITIONAL_METADATA>

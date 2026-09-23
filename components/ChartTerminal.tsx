@@ -6,6 +6,7 @@ import {
   computeTechnicals,
   calculateVolumeProfile,
   calculatePivotAnchoredVolumeProfile,
+  getPAVPConfigForTimeframe,
   detectChartSignals,
   detectPAVPSignals,
   calculateSessionLevels,
@@ -31,6 +32,30 @@ import {
   Anchor,
   Flame,
 } from "lucide-react";
+
+interface PAVPOverlayCoords {
+  anchorX: number | null;
+  latestX: number | null;
+  vahY: number | null;
+  valY: number | null;
+  pocY: number | null;
+  anchorPriceY: number | null;
+  rows: {
+    y: number;
+    height: number;
+    width: number;
+    isPOC: boolean;
+    isValueArea: boolean;
+    volume: number;
+    price: number;
+  }[];
+  pivot: {
+    price: number;
+    type: "high" | "low";
+    changePercent?: number;
+    volume?: number;
+  } | null;
+}
 
 interface ChartTerminalProps {
   activeSymbol: AssetSymbol;
@@ -80,6 +105,7 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
   const [showPAVPPanel, setShowPAVPPanel] = useState<boolean>(true); // PAVP HUD Drawer
   const [showLevelDrawer, setShowLevelDrawer] = useState<boolean>(false); // SMC Level Drawer
   const [showRSI, setShowRSI] = useState<boolean>(false); // RSI Sub-Panel
+  const [overlayCoords, setOverlayCoords] = useState<PAVPOverlayCoords | null>(null);
 
   // SMC Level Copy Feedback and Radar Drawer
   const [copiedLevel, setCopiedLevel] = useState<string | null>(null);
@@ -94,15 +120,25 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
 
   // Technical & SMC Calculations
   const technicals = React.useMemo(() => {
-    return computeTechnicals(candles, quote.pipPrecision);
-  }, [candles, quote.pipPrecision]);
+    return computeTechnicals(candles, quote.pipPrecision, timeframe);
+  }, [candles, quote.pipPrecision, timeframe]);
 
   const smc = technicals.smc;
 
   // Institutional Pivot-Anchored Volume Profile (PineScript v6 dgtrd PAVP)
+  const pavpConfig = React.useMemo(() => getPAVPConfigForTimeframe(timeframe), [timeframe]);
   const pavp = React.useMemo(() => {
-    return technicals.pavp || calculatePivotAnchoredVolumeProfile(candles, 15, 28, 0.68, quote.pipPrecision);
-  }, [technicals.pavp, candles, quote.pipPrecision]);
+    return (
+      technicals.pavp ||
+      calculatePivotAnchoredVolumeProfile(
+        candles,
+        pavpConfig.pvtLength,
+        pavpConfig.profileLevels,
+        pavpConfig.valueAreaPct,
+        quote.pipPrecision
+      )
+    );
+  }, [technicals.pavp, candles, pavpConfig, quote.pipPrecision]);
 
   // Volume Profile (VAH, VAL, POC) Signals (strictly VP)
   const pavpSignalResult = React.useMemo(() => {
@@ -110,6 +146,78 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
   }, [candles, pavp, activeSymbol, quote.pipPrecision]);
 
   const chartSignals = pavpSignalResult.markers;
+
+  // Real-time synchronization of the Anchored Volume Profile SVG overlay
+  const updatePAVPOverlay = React.useCallback(() => {
+    if (!chartInstanceRef.current || !candleSeriesRef.current || !showVP || !pavp || pavp.poc <= 0) {
+      setOverlayCoords(null);
+      return;
+    }
+    const chart = chartInstanceRef.current;
+    const series = candleSeriesRef.current;
+    const timeScale = chart.timeScale();
+
+    if (!candles || candles.length === 0) {
+      setOverlayCoords(null);
+      return;
+    }
+
+    const anchorTime = pavp.startTime;
+    const latestCandle = candles[candles.length - 1];
+    if (!latestCandle) return;
+
+    let anchorX = timeScale.timeToCoordinate(anchorTime as any);
+    let latestX = timeScale.timeToCoordinate(latestCandle.time as any);
+
+    const containerWidth = chartContainerRef.current?.clientWidth || 800;
+
+    if (anchorX === null) {
+      anchorX = 0;
+    }
+    if (latestX === null) {
+      latestX = containerWidth - 55;
+    }
+
+    const vahY = series.priceToCoordinate(pavp.vah);
+    const valY = series.priceToCoordinate(pavp.val);
+    const pocY = series.priceToCoordinate(pavp.poc);
+    const anchorPriceY = pavp.pivot ? series.priceToCoordinate(pavp.pivot.price) : null;
+
+    const maxVol = Math.max(...pavp.rows.map((r) => r.volume), 1);
+    const maxHistWidth = Math.min(240, Math.max(90, (latestX - anchorX) * 0.45));
+
+    const rows = pavp.rows.map((r, i) => {
+      const y = series.priceToCoordinate(r.price);
+      let height = 4;
+      if (i < pavp.rows.length - 1) {
+        const nextY = series.priceToCoordinate(pavp.rows[i + 1].price);
+        if (y !== null && nextY !== null) {
+          height = Math.max(2, Math.abs(y - nextY));
+        }
+      }
+      const width = Math.max(4, Math.round((r.volume / maxVol) * maxHistWidth));
+      return {
+        y: y !== null ? y : -999,
+        height,
+        width,
+        isPOC: r.isPOC,
+        isValueArea: r.isValueArea,
+        volume: r.volume,
+        price: r.price,
+      };
+    });
+
+    setOverlayCoords({
+      anchorX,
+      latestX,
+      vahY,
+      valY,
+      pocY,
+      anchorPriceY,
+      rows,
+      pivot: pavp.pivot,
+    });
+  }, [candles, pavp, showVP]);
 
   // Institutional Session Liquidity (PDH/PDL, ORB, Asia H/L, Daily Open)
   const sessionLevels = React.useMemo(() => {
@@ -454,6 +562,17 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
         console.debug("fitContent error:", e);
       }
 
+      // Continuous synchronization of the Anchored Volume Profile SVG overlay
+      const onRangeChange = () => {
+        updatePAVPOverlay();
+      };
+      chart.timeScale().subscribeVisibleLogicalRangeChange(onRangeChange);
+
+      // Initial compute after paint
+      setTimeout(() => {
+        updatePAVPOverlay();
+      }, 60);
+
       if (typeof ResizeObserver !== "undefined" && chartContainerRef.current) {
         resizeObserver = new ResizeObserver((entries) => {
           if (isDisposed || !chart) return;
@@ -465,6 +584,7 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
                   width: cr.width,
                   height: cr.height,
                 });
+                updatePAVPOverlay();
               } catch (e) {
                 console.debug("Chart resize error:", e);
               }
@@ -523,6 +643,15 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
     sessionLevels.orbHigh,
     sessionLevels.orbLow,
   ]);
+
+  // Re-synchronize PAVP overlay whenever candles or levels change
+  useEffect(() => {
+    if (chartMode !== "smart") return;
+    const timer = setTimeout(() => {
+      updatePAVPOverlay();
+    }, 60);
+    return () => clearTimeout(timer);
+  }, [candlesSignature, pavp, showVP, updatePAVPOverlay, chartMode]);
 
   // Real-time ticking engine: updates last candle & live price line continuously
   useEffect(() => {
@@ -1216,30 +1345,121 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
           <>
             <div ref={chartContainerRef} className="w-full h-full min-h-[460px]" />
 
-            {/* Pivot-Anchored Volume Profile Visual Distribution Overlay (Right edge histogram) */}
-            {showVP && pavp && pavp.rows.length > 0 && (
-              <div className="absolute top-12 right-14 bottom-8 w-28 pointer-events-none flex flex-col-reverse justify-between opacity-85 z-10">
-                {(() => {
-                  const maxVol = Math.max(...pavp.rows.map((r) => r.volume), 1);
-                  return pavp.rows.map((row, idx) => {
-                    const widthPct = Math.max(8, Math.round((row.volume / maxVol) * 100));
-                    return (
-                      <div key={idx} className="w-full flex items-center justify-end h-full">
-                        <div
-                          style={{ width: `${widthPct}%` }}
-                          className={`h-[2px] transition-all rounded-l ${
-                            row.isPOC
-                              ? "bg-[#EF4444] shadow-[0_0_8px_rgba(239,68,68,0.9)] h-[3.5px]"
-                              : row.isValueArea
-                              ? "bg-[#2563EB]/70 h-[2.5px]"
-                              : "bg-[#475569]/35"
-                          }`}
+            {/* TradingView dgtrd Pivot-Anchored Volume Profile & Value Area SVG Overlay */}
+            {showVP && overlayCoords && overlayCoords.anchorX !== null && (
+              <svg
+                className="absolute inset-0 w-full h-full pointer-events-none z-10 overflow-hidden"
+                style={{ width: "100%", height: "100%" }}
+              >
+                {/* 1. Value Area Shaded Zone (Translucent Blue fill between VAH and VAL) */}
+                {overlayCoords.vahY !== null &&
+                  overlayCoords.valY !== null &&
+                  overlayCoords.anchorX !== null &&
+                  overlayCoords.latestX !== null && (
+                    <g className="va-box">
+                      <rect
+                        x={Math.max(0, overlayCoords.anchorX)}
+                        y={Math.min(overlayCoords.vahY, overlayCoords.valY)}
+                        width={Math.max(20, (overlayCoords.latestX || 500) - Math.max(0, overlayCoords.anchorX))}
+                        height={Math.abs(overlayCoords.valY - overlayCoords.vahY)}
+                        fill="rgba(37, 99, 235, 0.08)"
+                        stroke="rgba(37, 99, 235, 0.25)"
+                        strokeWidth="1"
+                        strokeDasharray="4 2"
+                      />
+                    </g>
+                  )}
+
+                {/* 2. Anchored Horizontal Volume Profile Bars */}
+                {overlayCoords.rows.map((row, idx) => {
+                  if (row.y < -50 || row.y > 2000) return null;
+                  const startX = Math.max(0, overlayCoords.anchorX || 0);
+                  const barY = row.y - row.height / 2;
+                  const barFill = row.isPOC
+                    ? "#EF4444"
+                    : row.isValueArea
+                    ? "#FBC02D"
+                    : "#64748B";
+                  const barOpacity = row.isPOC ? 0.95 : row.isValueArea ? 0.82 : 0.45;
+
+                  return (
+                    <g key={idx} className="vp-bar">
+                      <rect
+                        x={startX}
+                        y={barY}
+                        width={row.width}
+                        height={Math.max(2, row.height - 1)}
+                        fill={barFill}
+                        opacity={barOpacity}
+                        rx={1}
+                      />
+                      {row.isPOC && (
+                        <rect
+                          x={startX}
+                          y={barY + row.height / 2 - 1}
+                          width={Math.max(row.width, (overlayCoords.latestX || 500) - startX)}
+                          height={2}
+                          fill="#EF4444"
+                          opacity={0.85}
                         />
-                      </div>
-                    );
-                  });
-                })()}
-              </div>
+                      )}
+                    </g>
+                  );
+                })}
+
+                {/* 3. Anchor Pivot Tag (TradingView dgtrd style: e.g. 8529 ↓ %14.2 \n 58.27K Vol) */}
+                {overlayCoords.pivot &&
+                  overlayCoords.anchorX !== null &&
+                  overlayCoords.anchorPriceY !== null &&
+                  overlayCoords.anchorPriceY > 0 && (
+                    <g
+                      transform={`translate(${overlayCoords.anchorX}, ${
+                        overlayCoords.pivot.type === "low"
+                          ? overlayCoords.anchorPriceY + 14
+                          : overlayCoords.anchorPriceY - 34
+                      })`}
+                    >
+                      <rect
+                        x={-46}
+                        y={0}
+                        width={92}
+                        height={25}
+                        rx={4}
+                        fill="#1E293B"
+                        stroke="#3B82F6"
+                        strokeWidth={1}
+                        opacity={0.92}
+                      />
+                      <text
+                        x={0}
+                        y={11}
+                        textAnchor="middle"
+                        fill="#F8FAFC"
+                        fontSize={9}
+                        fontWeight="bold"
+                        fontFamily="monospace"
+                      >
+                        {overlayCoords.pivot.price}{" "}
+                        {overlayCoords.pivot.type === "low" ? "↓" : "↑"}
+                        {overlayCoords.pivot.changePercent != null
+                          ? ` %${Math.abs(overlayCoords.pivot.changePercent).toFixed(1)}`
+                          : ""}
+                      </text>
+                      <text
+                        x={0}
+                        y={21}
+                        textAnchor="middle"
+                        fill="#94A3B8"
+                        fontSize={7.5}
+                        fontFamily="monospace"
+                      >
+                        {overlayCoords.pivot.volume
+                          ? `${overlayCoords.pivot.volume > 1000 ? (overlayCoords.pivot.volume / 1000).toFixed(1) + "K" : overlayCoords.pivot.volume} Vol`
+                          : "PIVOT"}
+                      </text>
+                    </g>
+                  )}
+              </svg>
             )}
 
             {/* Floating Pivot-Anchored Volume Profile (PAVP) HUD Card */}

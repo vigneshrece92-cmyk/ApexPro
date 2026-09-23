@@ -76,6 +76,8 @@ export interface PivotPoint {
   price: number;
   type: "high" | "low";
   pvtLength: number;
+  changePercent?: number;
+  volume?: number;
 }
 
 export interface PivotAnchoredVPResult {
