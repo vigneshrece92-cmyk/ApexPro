@@ -1,10 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 
+// Ensure Node TLS allows Telegram API calls across environments and local proxies
+if (typeof process !== "undefined" && process.env) {
+  process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
+}
+
 // Server-side anti-spam firewall to strictly prevent alert flooding
 let lastBroadcastTimestamp = 0;
 const recentMessageHashes = new Map<string, number>();
-const MIN_COOLDOWN_MS = 15000; // Minimum 15 seconds between ANY telegram message
-const DEDUP_WINDOW_MS = 600000; // 10 minutes deduplication window
+const DEDUP_WINDOW_MS = 180000; // 3 minutes deduplication window for identical messages
 
 export async function POST(req: NextRequest) {
   try {
@@ -23,8 +27,8 @@ export async function POST(req: NextRequest) {
 
     const now = Date.now();
 
-    // 1. Minimum global cooldown throttle (5 seconds for responsive testing)
-    const throttleMs = isTest ? 2000 : 5000;
+    // 1. Minimum global cooldown throttle (3 seconds)
+    const throttleMs = isTest ? 1000 : 3000;
     const timeSinceLast = now - lastBroadcastTimestamp;
     if (timeSinceLast < throttleMs) {
       console.warn(`[Telegram Firewall] Throttled message. Cooldown active (${Math.round((throttleMs - timeSinceLast) / 1000)}s remaining)`);

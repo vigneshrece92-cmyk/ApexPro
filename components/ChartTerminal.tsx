@@ -787,6 +787,39 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
     { sym: "NATURALGAS", label: "NATURAL GAS", badge: "MCX" },
   ];
 
+  const fnoStocks: { sym: AssetSymbol; label: string; lot: number }[] = [
+    { sym: "RELIANCE", label: "RELIANCE", lot: 250 },
+    { sym: "HDFCBANK", label: "HDFC BANK", lot: 550 },
+    { sym: "ICICIBANK", label: "ICICI BANK", lot: 700 },
+    { sym: "SBIN", label: "SBIN", lot: 750 },
+    { sym: "TATAMOTORS", label: "TATA MOTORS", lot: 575 },
+    { sym: "TATASTEEL", label: "TATA STEEL", lot: 5500 },
+    { sym: "INFY", label: "INFOSYS", lot: 400 },
+    { sym: "TCS", label: "TCS", lot: 175 },
+    { sym: "BAJFINANCE", label: "BAJAJ FINANCE", lot: 125 },
+    { sym: "MARUTI", label: "MARUTI", lot: 50 },
+    { sym: "LT", label: "L&T", lot: 150 },
+    { sym: "AXISBANK", label: "AXIS BANK", lot: 625 },
+    { sym: "KOTAKBANK", label: "KOTAK BANK", lot: 400 },
+    { sym: "BHARTIARTL", label: "BHARTI AIRTEL", lot: 475 },
+    { sym: "ADANIENT", label: "ADANI ENTERPRISES", lot: 300 },
+    { sym: "ADANIPORTS", label: "ADANI PORTS", lot: 400 },
+    { sym: "HINDUNILVR", label: "HIND UNILEVER", lot: 300 },
+    { sym: "ITC", label: "ITC", lot: 1600 },
+    { sym: "SUNPHARMA", label: "SUN PHARMA", lot: 350 },
+    { sym: "TITAN", label: "TITAN", lot: 175 },
+    { sym: "JSWSTEEL", label: "JSW STEEL", lot: 675 },
+    { sym: "COALINDIA", label: "COAL INDIA", lot: 2100 },
+    { sym: "NTPC", label: "NTPC", lot: 1500 },
+    { sym: "POWERGRID", label: "POWER GRID", lot: 1800 },
+    { sym: "BPCL", label: "BPCL", lot: 1800 },
+    { sym: "ONGC", label: "ONGC", lot: 2250 },
+    { sym: "VEDL", label: "VEDANTA", lot: 1550 },
+    { sym: "BHEL", label: "BHEL", lot: 2625 },
+    { sym: "DLF", label: "DLF", lot: 825 },
+    { sym: "BEL", label: "BEL", lot: 2850 },
+  ];
+
   // TradingView Symbol Mapping
   const getTradingViewSymbol = (sym: AssetSymbol): string => {
     switch (sym) {
@@ -803,7 +836,7 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
       case "NATURALGAS":
         return "MCX:NATURALGAS1!";
       default:
-        return "NSE:NIFTY";
+        return `NSE:${sym}`;
     }
   };
 
@@ -848,7 +881,7 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
               <button
                 key={item.sym}
                 onClick={() => onSelectSymbol(item.sym)}
-                className={`px-2.5 py-1 text-xs font-semibold rounded-md flex items-center gap-1.5 transition-all ${
+                className={`px-2.5 py-1 text-xs font-semibold rounded-md flex items-center gap-1.5 transition-all shrink-0 ${
                   activeSymbol === item.sym
                     ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/50 shadow-sm font-bold"
                     : "text-slate-400 hover:text-white"
@@ -860,6 +893,30 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
                 </span>
               </button>
             ))}
+          </div>
+
+          {/* Top 30 High-Volume Volatile F&O Stocks Dropdown */}
+          <div className="flex items-center bg-[#0d0c1d] rounded-lg px-2.5 py-1 border border-[#202138] text-xs">
+            <span className="text-amber-400 font-bold mr-1.5 flex items-center gap-1 text-[11px] shrink-0">
+              <Sparkles className="w-3 h-3 text-amber-400" />
+              <span>30 Volatile F&O:</span>
+            </span>
+            <select
+              value={fnoStocks.some((s) => s.sym === activeSymbol) ? activeSymbol : ""}
+              onChange={(e) => {
+                if (e.target.value) onSelectSymbol(e.target.value as AssetSymbol);
+              }}
+              className="bg-transparent text-white font-bold text-xs outline-none cursor-pointer max-w-[170px]"
+            >
+              <option value="" disabled className="bg-[#0b0b18] text-slate-400">
+                Choose F&O Stock...
+              </option>
+              {fnoStocks.map((stock) => (
+                <option key={stock.sym} value={stock.sym} className="bg-[#0b0b18] text-white">
+                  {stock.label} (Lot {stock.lot})
+                </option>
+              ))}
+            </select>
           </div>
 
           <div className="hidden xl:flex items-center gap-2 pl-2 text-xs font-mono">

@@ -11,7 +11,12 @@ import {
   OptionContract,
 } from "@/lib/types";
 import { INITIAL_QUOTES, generateRealisticCandles } from "@/lib/defaultData";
-import { generateTradeSignalFromData } from "@/lib/technicals";
+import {
+  generateTradeSignalFromData,
+  calculatePivotAnchoredVolumeProfile,
+  detectPAVPSignals,
+} from "@/lib/technicals";
+import { getRecommendedOptionContract, getOptionSpec } from "@/lib/optionsEngine";
 import { getInitialInstitutionalAlerts } from "@/lib/alertDetectors";
 import { Header } from "@/components/Header";
 import { ChartTerminal } from "@/components/ChartTerminal";
@@ -61,6 +66,7 @@ export default function TerminalDashboard() {
   const [demoAccount, setDemoAccount] = useState<DemoAccountState>(INITIAL_ACCOUNT_STATE);
   const notifiedTicketsRef = useRef<Set<number>>(new Set());
   const notifiedClosedTicketsRef = useRef<Set<number>>(new Set());
+  const notifiedSignalKeysRef = useRef<Set<string>>(new Set());
   const [isDemoPanelOpen, setIsDemoPanelOpen] = useState(false);
   const [demoPrefillSetup, setDemoPrefillSetup] = useState<{
     action: "BUY" | "SELL";
@@ -203,7 +209,104 @@ export default function TerminalDashboard() {
     }
   }, [demoAccount.open_positions, demoAccount.history, isMounted]);
 
-  // 2. Pure state tick & auto-bot evaluation on live quotes and 5s heartbeat
+  // 2. Active Chart 15M PAVP Signal Detector & Instant Telegram Broadcaster
+  useEffect(() => {
+    if (!isMounted || !candles || candles.length < 15 || !quote) return;
+
+    try {
+      const precision = quote.pipPrecision || 2;
+      const pavp = calculatePivotAnchoredVolumeProfile(candles, 15, 28, 0.68, precision);
+      if (!pavp || pavp.poc <= 0) return;
+
+      const { signals } = detectPAVPSignals(candles, pavp, activeSymbol, precision);
+      if (!signals || signals.length === 0) return;
+
+      // Scan signals on fresh candles (within the last 3 candles)
+      for (const sig of signals) {
+        const isRecent = typeof sig.candleIndex === "number" ? sig.candleIndex >= candles.length - 3 : true;
+        if (!isRecent) continue;
+
+        const sigKey = `${activeSymbol}_${sig.action}_${sig.time || sig.candleIndex}_${sig.levelPrice}`;
+        if (notifiedSignalKeysRef.current.has(sigKey)) continue;
+
+        notifiedSignalKeysRef.current.add(sigKey);
+
+        const optContract = getRecommendedOptionContract(activeSymbol, sig.action, quote.bid);
+        const optSpec = getOptionSpec(activeSymbol);
+        const curSym = quote.currency || "₹";
+        const emoji = sig.action === "BUY CE" ? "🟢" : "🔴";
+
+        const msg = `🚨 <b>Apex Terminal 15M PAVP Signal Alert</b>\n━━━━━━━━━━━━━━━━━━━━\n<b>Instrument:</b> ${activeSymbol} [${timeframe.toUpperCase()}]\n<b>Signal:</b> ${emoji} <b>${sig.label}</b>\n<b>Action:</b> ${sig.action} (ATM ${optContract.type})\n<b>Trigger Price:</b> ${curSym}${sig.levelPrice.toFixed(precision)}\n<b>Stop Loss:</b> ${curSym}${sig.sl.toFixed(precision)}\n<b>Target 1 (POC Magnet):</b> ${curSym}${sig.tp1.toFixed(precision)}\n<b>Target 2:</b> ${curSym}${sig.tp2.toFixed(precision)}\n<b>Recommended Option:</b> ${activeSymbol} ${optContract.strike} ${optContract.type} (${optSpec.lotSize} Qty / 1 Lot) @ ~${curSym}${optContract.premiumAsk.toFixed(2)}\n<b>Expiry:</b> ${optContract.expiry}\n<b>Analysis:</b> ${sig.rationale}\n<i>Apex Autonomous Options & Commodities Engine</i>`;
+
+        sendTelegramNotification(msg).catch((err) =>
+          console.warn("Telegram signal broadcast error:", err)
+        );
+      }
+    } catch (e) {
+      console.warn("Signal detector error:", e);
+    }
+  }, [candles, quote, activeSymbol, timeframe, isMounted]);
+
+  // 3. Multi-Asset Background Scanner (Watches NIFTY, BANKNIFTY, FINNIFTY, CRUDEOIL, NATURALGAS)
+  useEffect(() => {
+    if (!isMounted) return;
+
+    const monitoredSymbols: AssetSymbol[] = ["NIFTY", "BANKNIFTY", "FINNIFTY", "CRUDEOIL", "NATURALGAS"];
+
+    const runMultiAssetScan = () => {
+      monitoredSymbols.forEach((sym) => {
+        if (sym === activeSymbol) return; // handled by primary active effect
+
+        const symQuote = allQuotes[sym] || INITIAL_QUOTES[sym];
+        if (!symQuote) return;
+
+        try {
+          const precision = symQuote.pipPrecision || 2;
+          const symCandles = generateRealisticCandles(sym, "15m", 80, symQuote.bid);
+          const pavp = calculatePivotAnchoredVolumeProfile(symCandles, 15, 28, 0.68, precision);
+          if (!pavp || pavp.poc <= 0) return;
+
+          const { signals } = detectPAVPSignals(symCandles, pavp, sym, precision);
+          if (!signals || signals.length === 0) return;
+
+          for (const sig of signals) {
+            const isRecent = typeof sig.candleIndex === "number" ? sig.candleIndex >= symCandles.length - 2 : true;
+            if (!isRecent) continue;
+
+            const sigKey = `${sym}_${sig.action}_${sig.time || sig.candleIndex}_${sig.levelPrice}`;
+            if (notifiedSignalKeysRef.current.has(sigKey)) continue;
+
+            notifiedSignalKeysRef.current.add(sigKey);
+
+            const optContract = getRecommendedOptionContract(sym, sig.action, symQuote.bid);
+            const optSpec = getOptionSpec(sym);
+            const curSym = symQuote.currency || "₹";
+            const emoji = sig.action === "BUY CE" ? "🟢" : "🔴";
+
+            const msg = `🚨 <b>Apex Terminal 15M PAVP Signal Alert</b>\n━━━━━━━━━━━━━━━━━━━━\n<b>Instrument:</b> ${sym} [15M]\n<b>Signal:</b> ${emoji} <b>${sig.label}</b>\n<b>Action:</b> ${sig.action} (ATM ${optContract.type})\n<b>Trigger Price:</b> ${curSym}${sig.levelPrice.toFixed(precision)}\n<b>Stop Loss:</b> ${curSym}${sig.sl.toFixed(precision)}\n<b>Target 1 (POC Magnet):</b> ${curSym}${sig.tp1.toFixed(precision)}\n<b>Target 2:</b> ${curSym}${sig.tp2.toFixed(precision)}\n<b>Recommended Option:</b> ${sym} ${optContract.strike} ${optContract.type} (${optSpec.lotSize} Qty / 1 Lot) @ ~${curSym}${optContract.premiumAsk.toFixed(2)}\n<b>Expiry:</b> ${optContract.expiry}\n<b>Analysis:</b> ${sig.rationale}\n<i>Apex Autonomous Options & Commodities Engine</i>`;
+
+            sendTelegramNotification(msg).catch((err) =>
+              console.warn("Multi-asset telegram broadcast error:", err)
+            );
+
+            // If auto-bot is enabled, trigger 1 lot demo execution for this symbol!
+            setDemoAccount((prev) => {
+              if (!prev?.auto_bot?.enabled) return prev;
+              return evaluateAutoBot(prev, symQuote, alerts, allQuotes, symCandles, [sig], "15m");
+            });
+          }
+        } catch (err) {
+          // ignore scan error
+        }
+      });
+    };
+
+    runMultiAssetScan();
+    const scanInterval = setInterval(runMultiAssetScan, 15000);
+    return () => clearInterval(scanInterval);
+  }, [allQuotes, activeSymbol, alerts, isMounted]);
+
+  // 4. Pure state tick & auto-bot evaluation on live quotes and 5s heartbeat
   useEffect(() => {
     if (!isMounted || !quote) return;
 
@@ -220,7 +323,7 @@ export default function TerminalDashboard() {
     runEngineTick();
     const heartbeat = setInterval(runEngineTick, 5000);
     return () => clearInterval(heartbeat);
-  }, [quote, alerts, allQuotes, candles, isMounted]);
+  }, [quote, alerts, allQuotes, candles, timeframe, isMounted]);
 
   const handleSaveApiKey = (key: string) => {
     setGeminiApiKey(key);

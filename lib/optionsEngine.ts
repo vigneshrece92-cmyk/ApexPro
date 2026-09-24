@@ -14,6 +14,38 @@ export const SYMBOL_OPTION_SPECS: Record<string, SymbolOptionSpec> = {
   SENSEX: { lotSize: 10, strikeStep: 100, defaultIV: 13.0, currency: "₹" },
   CRUDEOIL: { lotSize: 100, strikeStep: 50, defaultIV: 28.5, currency: "₹" },
   NATURALGAS: { lotSize: 1250, strikeStep: 5, defaultIV: 45.0, currency: "₹" },
+
+  // Top 30 High-Volume Volatile NSE F&O Stocks (Official NSE lot sizes & strike steps)
+  RELIANCE: { lotSize: 250, strikeStep: 20, defaultIV: 18.5, currency: "₹" },
+  HDFCBANK: { lotSize: 550, strikeStep: 10, defaultIV: 17.2, currency: "₹" },
+  ICICIBANK: { lotSize: 700, strikeStep: 10, defaultIV: 19.0, currency: "₹" },
+  SBIN: { lotSize: 750, strikeStep: 5, defaultIV: 22.4, currency: "₹" },
+  TATAMOTORS: { lotSize: 575, strikeStep: 10, defaultIV: 28.6, currency: "₹" },
+  TATASTEEL: { lotSize: 5500, strikeStep: 1, defaultIV: 27.5, currency: "₹" },
+  INFY: { lotSize: 400, strikeStep: 20, defaultIV: 21.0, currency: "₹" },
+  TCS: { lotSize: 175, strikeStep: 50, defaultIV: 18.2, currency: "₹" },
+  BAJFINANCE: { lotSize: 125, strikeStep: 50, defaultIV: 26.5, currency: "₹" },
+  MARUTI: { lotSize: 50, strikeStep: 100, defaultIV: 22.0, currency: "₹" },
+  LT: { lotSize: 150, strikeStep: 20, defaultIV: 20.5, currency: "₹" },
+  AXISBANK: { lotSize: 625, strikeStep: 10, defaultIV: 22.8, currency: "₹" },
+  KOTAKBANK: { lotSize: 400, strikeStep: 20, defaultIV: 19.5, currency: "₹" },
+  BHARTIARTL: { lotSize: 475, strikeStep: 10, defaultIV: 19.8, currency: "₹" },
+  ADANIENT: { lotSize: 300, strikeStep: 20, defaultIV: 38.5, currency: "₹" },
+  ADANIPORTS: { lotSize: 400, strikeStep: 10, defaultIV: 32.0, currency: "₹" },
+  HINDUNILVR: { lotSize: 300, strikeStep: 20, defaultIV: 16.5, currency: "₹" },
+  ITC: { lotSize: 1600, strikeStep: 5, defaultIV: 17.8, currency: "₹" },
+  SUNPHARMA: { lotSize: 350, strikeStep: 10, defaultIV: 20.0, currency: "₹" },
+  TITAN: { lotSize: 175, strikeStep: 20, defaultIV: 23.5, currency: "₹" },
+  JSWSTEEL: { lotSize: 675, strikeStep: 10, defaultIV: 26.0, currency: "₹" },
+  COALINDIA: { lotSize: 2100, strikeStep: 5, defaultIV: 24.2, currency: "₹" },
+  NTPC: { lotSize: 1500, strikeStep: 2.5, defaultIV: 23.0, currency: "₹" },
+  POWERGRID: { lotSize: 1800, strikeStep: 2.5, defaultIV: 21.5, currency: "₹" },
+  BPCL: { lotSize: 1800, strikeStep: 2.5, defaultIV: 29.0, currency: "₹" },
+  ONGC: { lotSize: 2250, strikeStep: 2.5, defaultIV: 28.5, currency: "₹" },
+  VEDL: { lotSize: 1550, strikeStep: 5, defaultIV: 36.0, currency: "₹" },
+  BHEL: { lotSize: 2625, strikeStep: 2.5, defaultIV: 39.5, currency: "₹" },
+  DLF: { lotSize: 825, strikeStep: 10, defaultIV: 31.0, currency: "₹" },
+  BEL: { lotSize: 2850, strikeStep: 2.5, defaultIV: 33.0, currency: "₹" },
 };
 
 const MONTH_NAMES = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
@@ -43,6 +75,38 @@ export function getUpcomingOptionExpiry(symbol: AssetSymbol | string): string {
     }
     expDate.setDate(26);
     return `26-${MONTH_NAMES[expDate.getMonth()]}`;
+  }
+
+  const isStock = !(
+    symbol === "NIFTY" ||
+    symbol === "BANKNIFTY" ||
+    symbol === "FINNIFTY" ||
+    symbol === "SENSEX"
+  );
+
+  // Indian Stock Options expire on the last Thursday of the month
+  if (isStock) {
+    const year = istDate.getFullYear();
+    let month = istDate.getMonth();
+    
+    // Find last Thursday of current month
+    const findLastThursday = (y: number, m: number) => {
+      const lastDay = new Date(y, m + 1, 0); // last day of month
+      const dow = lastDay.getDay();
+      const diff = (dow >= 4 ? dow - 4 : dow + 3);
+      return new Date(y, m, lastDay.getDate() - diff);
+    };
+
+    let expDate = findLastThursday(year, month);
+    if (istDate.getTime() > expDate.getTime() + 15.5 * 3600 * 1000) {
+      // already passed, take next month
+      month += 1;
+      expDate = findLastThursday(year, month);
+    }
+
+    const dd = String(expDate.getDate()).padStart(2, "0");
+    const mmm = MONTH_NAMES[expDate.getMonth() % 12];
+    return `${dd}-${mmm}`;
   }
 
   // NSE Indices:

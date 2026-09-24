@@ -6,7 +6,38 @@ export type AssetSymbol =
   | "FINNIFTY"
   | "SENSEX"
   | "INDIAVIX"
-  | "USDINR";
+  | "USDINR"
+  // Top 30 High-Volume Volatile NSE F&O Stocks
+  | "RELIANCE"
+  | "HDFCBANK"
+  | "ICICIBANK"
+  | "SBIN"
+  | "TATAMOTORS"
+  | "TATASTEEL"
+  | "INFY"
+  | "TCS"
+  | "BAJFINANCE"
+  | "MARUTI"
+  | "LT"
+  | "AXISBANK"
+  | "KOTAKBANK"
+  | "BHARTIARTL"
+  | "ADANIENT"
+  | "ADANIPORTS"
+  | "HINDUNILVR"
+  | "ITC"
+  | "SUNPHARMA"
+  | "TITAN"
+  | "JSWSTEEL"
+  | "COALINDIA"
+  | "NTPC"
+  | "POWERGRID"
+  | "BPCL"
+  | "ONGC"
+  | "VEDL"
+  | "BHEL"
+  | "DLF"
+  | "BEL";
 
 export type MarketMode = "INDIAN_OPTIONS";
 
@@ -71,7 +102,7 @@ export interface Candle {
 export interface Quote {
   symbol: AssetSymbol;
   name: string;
-  category: "Indian Index" | "MCX Commodity" | "Macro";
+  category: "Indian Index" | "MCX Commodity" | "Macro" | "NSE F&O Stock";
   bid: number;
   ask: number;
   spread: number;

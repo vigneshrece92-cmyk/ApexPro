@@ -19,7 +19,7 @@ export async function GET(req: NextRequest) {
   const updatedQuotes: Record<AssetSymbol, Quote> = { ...INITIAL_QUOTES };
   let activeCandles: Candle[] = [];
 
-  // Dedicated Indian Options & MCX Commodities Yahoo Symbol Mapping
+  // Dedicated Indian Options, MCX Commodities & Top 30 High-Volume F&O Stocks Yahoo Symbol Mapping
   const yahooSymbols: Partial<Record<AssetSymbol, string>> = {
     NIFTY: "^NSEI",
     BANKNIFTY: "^NSEBANK",
@@ -29,6 +29,38 @@ export async function GET(req: NextRequest) {
     NATURALGAS: "NG=F",
     INDIAVIX: "^INDIAVIX",
     USDINR: "INR=X",
+
+    // Top 30 High-Volume Volatile NSE F&O Stocks
+    RELIANCE: "RELIANCE.NS",
+    HDFCBANK: "HDFCBANK.NS",
+    ICICIBANK: "ICICIBANK.NS",
+    SBIN: "SBIN.NS",
+    TATAMOTORS: "TATAMOTORS.NS",
+    TATASTEEL: "TATASTEEL.NS",
+    INFY: "INFY.NS",
+    TCS: "TCS.NS",
+    BAJFINANCE: "BAJFINANCE.NS",
+    MARUTI: "MARUTI.NS",
+    LT: "LT.NS",
+    AXISBANK: "AXISBANK.NS",
+    KOTAKBANK: "KOTAKBANK.NS",
+    BHARTIARTL: "BHARTIARTL.NS",
+    ADANIENT: "ADANIENT.NS",
+    ADANIPORTS: "ADANIPORTS.NS",
+    HINDUNILVR: "HINDUNILVR.NS",
+    ITC: "ITC.NS",
+    SUNPHARMA: "SUNPHARMA.NS",
+    TITAN: "TITAN.NS",
+    JSWSTEEL: "JSWSTEEL.NS",
+    COALINDIA: "COALINDIA.NS",
+    NTPC: "NTPC.NS",
+    POWERGRID: "POWERGRID.NS",
+    BPCL: "BPCL.NS",
+    ONGC: "ONGC.NS",
+    VEDL: "VEDL.NS",
+    BHEL: "BHEL.NS",
+    DLF: "DLF.NS",
+    BEL: "BEL.NS",
   };
 
   const yahooKeys = Object.keys(yahooSymbols) as AssetSymbol[];

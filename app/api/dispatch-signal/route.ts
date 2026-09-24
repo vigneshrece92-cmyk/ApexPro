@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { AIAnalysisResult } from "@/lib/types";
 
+// Ensure Node TLS allows Discord / Telegram webhooks across environments
+if (typeof process !== "undefined" && process.env) {
+  process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
