@@ -54,7 +54,7 @@ export const Header: React.FC<HeaderProps> = ({
   mt5Balance = 100000.0,
   mt5Connected = true,
   onOpenDemoPanel,
-  demoBalance = 100000.0,
+  demoBalance = 1000000.0,
   autoBotEnabled = true,
   externalQuotes,
 }) => {
@@ -210,7 +210,7 @@ export const Header: React.FC<HeaderProps> = ({
                 <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
                 <Zap className="w-3.5 h-3.5 text-emerald-400" />
                 <span>
-                  <span className="hidden xs:inline">Demo: </span>{curSym}{(demoBalance ?? mt5Balance ?? (isIndian ? 100000 : 3000.0)).toLocaleString(isIndian ? "en-IN" : "en-US", { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
+                  <span className="hidden xs:inline">Demo: </span>{curSym}{(demoBalance ?? mt5Balance ?? (isIndian ? 1000000 : 3000.0)).toLocaleString(isIndian ? "en-IN" : "en-US", { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
                 </span>
               </button>
 

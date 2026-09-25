@@ -22,7 +22,7 @@ export const LotCalculatorModal: React.FC<LotCalculatorModalProps> = ({
       ? defaultSymbol
       : "NIFTY"
   );
-  const [balance, setBalance] = useState<number>(100000);
+  const [balance, setBalance] = useState<number>(1000000);
   const [riskPercent, setRiskPercent] = useState<number>(1.5);
   const [stopLossPoints, setStopLossPoints] = useState<number>(25);
 
@@ -39,12 +39,12 @@ export const LotCalculatorModal: React.FC<LotCalculatorModalProps> = ({
   const actualRisk = +(recommendedLots * riskPerLot).toFixed(0);
 
   const indianSymbols: { sym: AssetSymbol; label: string; lot: number }[] = [
-    { sym: "NIFTY", label: "NIFTY 50", lot: 25 },
+    { sym: "NIFTY", label: "NIFTY 50", lot: 65 },
     { sym: "BANKNIFTY", label: "BANK NIFTY", lot: 15 },
     { sym: "CRUDEOIL", label: "CRUDE OIL", lot: 100 },
     { sym: "NATURALGAS", label: "NAT GAS", lot: 1250 },
     { sym: "SENSEX", label: "SENSEX", lot: 10 },
-    { sym: "FINNIFTY", label: "FIN NIFTY", lot: 25 },
+    { sym: "FINNIFTY", label: "FIN NIFTY", lot: 65 },
   ];
 
   return (

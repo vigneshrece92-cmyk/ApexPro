@@ -178,8 +178,7 @@ export default function TerminalDashboard() {
       for (const pos of demoAccount.open_positions) {
         if (pos?.ticket && !notifiedTicketsRef.current.has(pos.ticket)) {
           notifiedTicketsRef.current.add(pos.ticket);
-          const isIndian = ["NIFTY", "BANKNIFTY", "CRUDEOIL", "NATURALGAS", "FINNIFTY", "SENSEX"].includes(pos.symbol);
-          const curSym = pos.currency || (isIndian ? "₹" : "$");
+          const curSym = pos.currency || "₹";
           const openPrice = typeof pos.price_open === "number" ? pos.price_open.toFixed(2) : "0.00";
           const sl = typeof pos.sl === "number" ? pos.sl.toFixed(2) : "0.00";
           const tp = typeof pos.tp === "number" ? pos.tp.toFixed(2) : "0.00";
@@ -198,8 +197,7 @@ export default function TerminalDashboard() {
     for (const closed of historyList) {
       if (closed?.ticket && !notifiedClosedTicketsRef.current.has(closed.ticket)) {
         notifiedClosedTicketsRef.current.add(closed.ticket);
-        const isIndian = ["NIFTY", "BANKNIFTY", "CRUDEOIL", "NATURALGAS", "FINNIFTY", "SENSEX"].includes(closed.symbol);
-        const curSym = closed.currency || (isIndian ? "₹" : "$");
+        const curSym = closed.currency || "₹";
         const profit = typeof closed.profit === "number" ? closed.profit : 0;
         const closePrice = typeof closed.price_close === "number" ? closed.price_close.toFixed(2) : "0.00";
         sendTelegramNotification(
@@ -251,7 +249,10 @@ export default function TerminalDashboard() {
   useEffect(() => {
     if (!isMounted) return;
 
-    const monitoredSymbols: AssetSymbol[] = ["NIFTY", "BANKNIFTY", "FINNIFTY", "CRUDEOIL", "NATURALGAS"];
+    const monitoredSymbols: AssetSymbol[] = [
+      "NIFTY", "BANKNIFTY", "FINNIFTY", "CRUDEOIL", "NATURALGAS",
+      "RELIANCE", "TATAMOTORS", "TATASTEEL", "HDFCBANK", "SBIN"
+    ];
 
     const runMultiAssetScan = () => {
       monitoredSymbols.forEach((sym) => {

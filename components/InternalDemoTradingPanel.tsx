@@ -59,7 +59,7 @@ export const InternalDemoTradingPanel: React.FC<InternalDemoTradingPanelProps> =
 
   const activeSymbol = liveQuote?.symbol || "NIFTY";
   const optSpec = getOptionSpec(activeSymbol);
-  const multiplier = optSpec.lotSize || 25;
+  const multiplier = optSpec.lotSize || 65;
 
   const currentPriceForSym = liveQuote?.bid || (activeSymbol === "NATURALGAS" ? 289.30 : activeSymbol === "CRUDEOIL" ? 8585.0 : 23320.0);
   const defaultDist = activeSymbol === "NATURALGAS" ? 2.5 : activeSymbol === "CRUDEOIL" ? 25.0 : activeSymbol === "BANKNIFTY" ? 70.0 : 35.0;
@@ -115,8 +115,7 @@ export const InternalDemoTradingPanel: React.FC<InternalDemoTradingPanelProps> =
 
   const handleExecute = () => {
     setStatusMessage({ type: null, text: "" });
-    const isIndian = ["NIFTY", "BANKNIFTY", "CRUDEOIL", "NATURALGAS", "SENSEX", "FINNIFTY"].includes(activeSymbol);
-    const opt = isIndian ? getRecommendedOptionContract(activeSymbol, action === "BUY" ? "BUY CE" : "BUY PE", currentOpenPrice) : null;
+    const opt = getRecommendedOptionContract(activeSymbol, action === "BUY" ? "BUY CE" : "BUY PE", currentOpenPrice);
     const currencySym = liveQuote.currency || account.currency || "₹";
 
     const res = executeDemoTrade(account, {
@@ -127,10 +126,10 @@ export const InternalDemoTradingPanel: React.FC<InternalDemoTradingPanelProps> =
       sl: stopLoss,
       tp: takeProfit,
       comment: prefillSetup ? "PAVP_Retest" : "Manual Option Entry",
-      optionContractName: opt ? `${activeSymbol} ${opt.strike} ${opt.type} ${opt.expiry} (${multiplier} Qty)` : undefined,
-      optionType: opt?.type,
-      optionStrike: opt?.strike,
-      optionEntryPremium: opt?.premiumAsk,
+      optionContractName: `${activeSymbol} ${opt.strike} ${opt.type} ${opt.expiry} (${multiplier} Qty)`,
+      optionType: opt.type,
+      optionStrike: opt.strike,
+      optionEntryPremium: opt.premiumAsk,
       lotSizeMultiplier: multiplier,
       currency: currencySym,
     });
@@ -233,10 +232,10 @@ export const InternalDemoTradingPanel: React.FC<InternalDemoTradingPanelProps> =
   };
 
   const handleReset = () => {
-    if (confirm("Reset Demo Account balance back to initial ₹1,00,000.00 and clear all positions?")) {
+    if (confirm("Reset Demo Account balance back to initial ₹10,00,000.00 and clear all positions?")) {
       const resetState = resetDemoAccount();
       onUpdateAccount(resetState);
-      setStatusMessage({ type: "success", text: "Demo Account successfully reset to ₹1,00,000.00." });
+      setStatusMessage({ type: "success", text: "Demo Account successfully reset to ₹10,00,000.00." });
     }
   };
 
@@ -267,6 +266,16 @@ export const InternalDemoTradingPanel: React.FC<InternalDemoTradingPanelProps> =
   };
 
   const handleExecute15MTradeNow = () => {
+    if (account.auto_bot.market_mode === "STRICT_REAL") {
+      const mCheck = isIndianMarketOpen(activeSymbol);
+      if (!mCheck.isOpen) {
+        setStatusMessage({
+          type: "error",
+          text: `Cannot execute trade: ${mCheck.statusText}. Indian stock market cutoff is 3:00 PM IST. Switch to "24/7 Practice" mode to test anytime.`,
+        });
+        return;
+      }
+    }
     const nextState = evaluateAutoBot(
       { ...account, auto_bot: { ...account.auto_bot, enabled: true } },
       liveQuote,
@@ -285,7 +294,7 @@ export const InternalDemoTradingPanel: React.FC<InternalDemoTradingPanelProps> =
   };
 
   const handleSetRisk = (pct: number) => {
-    const eq = typeof account?.equity === "number" && !isNaN(account.equity) ? account.equity : 100000.0;
+    const eq = typeof account?.equity === "number" && !isNaN(account.equity) ? account.equity : 1000000.0;
     const newLog: AutoBotLog = {
       id: `bot-risk-${Date.now()}`,
       timestamp: Date.now(),
@@ -309,7 +318,7 @@ export const InternalDemoTradingPanel: React.FC<InternalDemoTradingPanelProps> =
       id: `bot-mode-${Date.now()}`,
       timestamp: Date.now(),
       type: "info",
-      message: `Market Mode set to ${mode === "STRICT_REAL" ? "🏛️ NSE/MCX Hours" : "⚡ 24/7 Practice"}.`,
+      message: `Market Mode set to ${mode === "STRICT_REAL" ? "🏛️ NSE/MCX Hours (3PM Cutoff)" : "⚡ 24/7 Practice"}.`,
     };
     const nextState: DemoAccountState = {
       ...account,
@@ -323,7 +332,7 @@ export const InternalDemoTradingPanel: React.FC<InternalDemoTradingPanelProps> =
     onUpdateAccount(nextState);
   };
 
-  const marketStatus = isIndianMarketOpen();
+  const marketStatus = isIndianMarketOpen(activeSymbol);
   const totalTrades = account.history.length;
   const winningTrades = account.history.filter((t) => t.profit > 0).length;
   const winRate = totalTrades > 0 ? Math.round((winningTrades / totalTrades) * 100) : 0;
@@ -349,11 +358,11 @@ export const InternalDemoTradingPanel: React.FC<InternalDemoTradingPanelProps> =
                       marketStatus.isOpen ? "bg-emerald-400 animate-pulse" : "bg-amber-400"
                     }`}
                   ></span>
-                  {marketStatus.isOpen ? "NSE / MCX ACTIVE" : "MARKET CLOSED"}
+                  {marketStatus.isOpen ? "NSE / MCX ACTIVE" : "MARKET CLOSED / 3PM CUTOFF"}
                 </span>
               </div>
               <p className="text-xs text-terminal-muted">
-                Indian Options & MCX Simulated Broker • ₹1,00,000 Starting Balance • PAVP Volume Profile Engine
+                Indian Options & MCX Simulated Broker • ₹10,00,000 Starting Balance • PAVP Volume Profile Engine
               </p>
             </div>
           </div>
@@ -362,10 +371,10 @@ export const InternalDemoTradingPanel: React.FC<InternalDemoTradingPanelProps> =
             <button
               onClick={handleReset}
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md bg-rose-950/40 hover:bg-rose-900/60 text-rose-300 border border-rose-500/30 transition-all font-mono"
-              title="Reset balance to ₹1,00,000 and clear trades"
+              title="Reset balance to ₹10,00,000 and clear trades"
             >
               <RotateCcw className="w-3.5 h-3.5 text-rose-400" />
-              <span>Reset (₹1L)</span>
+              <span>Reset (₹10L)</span>
             </button>
             <button
               onClick={onClose}
@@ -406,7 +415,7 @@ export const InternalDemoTradingPanel: React.FC<InternalDemoTradingPanelProps> =
               <div className="text-lg sm:text-xl font-mono font-bold text-white mt-1">
                 ₹{account.balance.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
               </div>
-              <span className="text-[10px] text-emerald-400 font-mono">Demo ₹1,00,000 Base</span>
+              <span className="text-[10px] text-emerald-400 font-mono">Demo ₹10,00,000 Base</span>
             </div>
 
             {/* Equity */}
@@ -524,9 +533,9 @@ export const InternalDemoTradingPanel: React.FC<InternalDemoTradingPanelProps> =
                         ? "bg-indigo-600 text-white shadow-sm"
                         : "text-gray-400 hover:text-white"
                     }`}
-                    title="Real Market Hours: NSE 09:15-15:30 IST / MCX till 23:30 IST. Blocks trades outside official timings."
+                    title="Real Market Hours: NSE 09:15-15:00 Cutoff IST / MCX till 23:30 IST. Blocks trades outside official timings."
                   >
-                    🏛️ NSE / MCX Hours
+                    🏛️ NSE (3PM Cutoff) / MCX
                   </button>
                   <button
                     onClick={() => handleToggleMarketMode("24_7_PRACTICE")}

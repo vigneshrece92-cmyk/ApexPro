@@ -138,7 +138,7 @@ export function getOptionSpec(symbol: AssetSymbol | string): SymbolOptionSpec {
 
 export function calculateATMStrike(spotPrice: number, strikeStep: number): number {
   if (strikeStep <= 0) return Math.round(spotPrice);
-  return Math.round(spotPrice / strikeStep) * strikeStep;
+  return +(Math.round(spotPrice / strikeStep) * strikeStep).toFixed(2);
 }
 
 export function estimateOptionPremium(

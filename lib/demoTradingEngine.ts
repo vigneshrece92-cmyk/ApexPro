@@ -68,19 +68,25 @@ export interface DemoAccountState {
   };
 }
 
-const STORAGE_KEY = "apex_pro_indian_broker_v4";
+const STORAGE_KEY = "apex_pro_indian_broker_v5";
 
-export const INITIAL_DEMO_BALANCE = 100000.0;
+export const INITIAL_DEMO_BALANCE = 1000000.0; // ₹10,00,000 (10 Lakhs INR Allocated)
 export const DEFAULT_LEVERAGE = 1000;
 
 /**
  * Checks whether the Indian NSE/BSE & MCX Commodity market is currently open.
- * NSE F&O: 09:15 AM - 03:30 PM IST (Mon-Fri)
- * MCX Day & Evening: 09:00 AM - 11:30 PM IST (Mon-Fri)
+ * Indian Stock Market (NSE Indices & 30 Volatile F&O Stocks):
+ * - Open: 09:15 AM - 03:00 PM IST (Strict 3:00 PM Cutoff for new trades)
+ * MCX Day & Evening:
+ * - Open: 09:00 AM - 11:30 PM IST (Mon-Fri)
  */
-export function isIndianMarketOpen(now = new Date()): {
+export function isIndianMarketOpen(
+  symbol?: AssetSymbol | string,
+  now = new Date()
+): {
   isOpen: boolean;
   statusText: string;
+  reason?: string;
 } {
   const istDate = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
   const day = istDate.getDay(); // 0 = Sun, 6 = Sat
@@ -92,23 +98,68 @@ export function isIndianMarketOpen(now = new Date()): {
     return {
       isOpen: false,
       statusText: "Weekend Closed (Opens Monday 09:00 AM IST)",
+      reason: "Weekend",
     };
   }
 
-  // MCX is open till 11:30 PM (23:30)
-  if (totalMin >= 9 * 60 && totalMin <= 23 * 60 + 30) {
-    const isNse = totalMin >= 9 * 60 + 15 && totalMin <= 15 * 60 + 30;
+  const isCommodity = symbol === "CRUDEOIL" || symbol === "NATURALGAS";
+
+  if (isCommodity) {
+    // MCX Commodity Market: 09:00 AM to 11:30 PM (23:30) IST
+    if (totalMin >= 9 * 60 && totalMin <= 23 * 60 + 30) {
+      return {
+        isOpen: true,
+        statusText: "MCX Commodity Market Active (09:00 - 23:30 IST)",
+      };
+    }
+    return {
+      isOpen: false,
+      statusText: "MCX Market Closed (Opens 09:00 AM IST)",
+      reason: "Outside MCX trading hours",
+    };
+  }
+
+  // Indian Stock Market (NSE Indices & 30 Volatile F&O Stocks):
+  // Market Hours: 09:15 AM - 03:00 PM IST (Cutoff 3:00 PM)
+  const nseMarketOpenMin = 9 * 60 + 15; // 09:15 AM IST
+  const nseCutoffMin = 15 * 60;          // 03:00 PM IST (Strict Cutoff)
+
+  if (totalMin >= nseMarketOpenMin && totalMin < nseCutoffMin) {
     return {
       isOpen: true,
-      statusText: isNse
-        ? "NSE F&O & MCX Sessions Active (09:15 - 15:30 IST)"
-        : "MCX Commodity Evening Session Active (till 23:30 IST)",
+      statusText: "NSE F&O Market Active (09:15 - 15:00 Cutoff IST)",
+    };
+  }
+
+  if (totalMin >= nseCutoffMin && totalMin <= 15 * 60 + 30) {
+    return {
+      isOpen: false,
+      statusText: "3:00 PM NSE Cutoff Reached (No new trade entries)",
+      reason: "Indian stock market 3:00 PM cutoff reached",
+    };
+  }
+
+  if (totalMin < nseMarketOpenMin) {
+    return {
+      isOpen: false,
+      statusText: "Pre-Market (Opens 09:15 AM IST)",
+      reason: "Market opens at 09:15 AM IST",
+    };
+  }
+
+  // General check if no symbol is specified:
+  // If it's evening, MCX is still active
+  if (!symbol && totalMin >= 9 * 60 && totalMin <= 23 * 60 + 30) {
+    return {
+      isOpen: true,
+      statusText: "MCX Evening Session Active (NSE closed at 3:00 PM cutoff)",
     };
   }
 
   return {
     isOpen: false,
-    statusText: "Overnight Closed (Reopens 09:00 AM IST)",
+    statusText: "Market Closed (Opens tomorrow 09:15 AM IST)",
+    reason: "Market Closed",
   };
 }
 
@@ -128,7 +179,7 @@ export const INITIAL_ACCOUNT_STATE: DemoAccountState = {
   auto_bot: {
     enabled: true,
     risk_percent: 1.0,
-    market_mode: "24_7_PRACTICE",
+    market_mode: "STRICT_REAL",
     strategy_mode: "VOLUME_PROFILE_ONLY",
     logs: [],
   },
@@ -161,14 +212,27 @@ function getDefaultPrice(sym?: string): number {
 export function loadDemoAccount(): DemoAccountState {
   if (typeof window === "undefined") return INITIAL_ACCOUNT_STATE;
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    let raw = localStorage.getItem(STORAGE_KEY);
+    // Auto-migrate from older storage versions (v4, v3, etc.)
+    if (!raw) {
+      raw = localStorage.getItem("apex_pro_indian_broker_v4") || localStorage.getItem("apex_demo_account_v3");
+    }
     if (!raw) return INITIAL_ACCOUNT_STATE;
     const parsed = JSON.parse(raw);
 
-    const safeBalance = typeof parsed.balance === "number" && !isNaN(parsed.balance) ? parsed.balance : INITIAL_DEMO_BALANCE;
-    const safeEquity = typeof parsed.equity === "number" && !isNaN(parsed.equity) ? parsed.equity : safeBalance;
+    // Auto-migrate accounts with old ₹1,00,000 balance to ₹10,00,000 (10 Lakhs)
+    let safeBalance = typeof parsed.balance === "number" && !isNaN(parsed.balance) ? parsed.balance : INITIAL_DEMO_BALANCE;
+    if (safeBalance < 500000) {
+      safeBalance = INITIAL_DEMO_BALANCE;
+    }
+    let safeEquity = typeof parsed.equity === "number" && !isNaN(parsed.equity) ? parsed.equity : safeBalance;
+    if (safeEquity < 500000) {
+      safeEquity = safeBalance;
+    }
     const safeMargin = typeof parsed.margin === "number" && !isNaN(parsed.margin) ? parsed.margin : 0;
-    const safeMarginFree = typeof parsed.margin_free === "number" && !isNaN(parsed.margin_free) ? parsed.margin_free : safeBalance;
+    const safeMarginFree = typeof parsed.margin_free === "number" && !isNaN(parsed.margin_free) && parsed.margin_free >= 500000
+      ? parsed.margin_free
+      : Math.max(0, safeEquity - safeMargin);
     const safeOpenProfit = typeof parsed.open_profit === "number" && !isNaN(parsed.open_profit) ? parsed.open_profit : 0;
 
     const safeOpenPositions: DemoPosition[] = Array.isArray(parsed.open_positions)
@@ -178,6 +242,7 @@ export function loadDemoAccount(): DemoAccountState {
             const sym = (p.symbol as AssetSymbol) || "NIFTY";
             const defPrice = getDefaultPrice(sym);
             const pOpen = typeof p.price_open === "number" && !isNaN(p.price_open) ? p.price_open : defPrice;
+            const optSpec = getOptionSpec(sym);
             return {
               ticket: typeof p.ticket === "number" ? p.ticket : Math.floor(1000000 + Math.random() * 9000000),
               symbol: sym,
@@ -192,6 +257,10 @@ export function loadDemoAccount(): DemoAccountState {
               time: typeof p.time === "number" ? p.time : Date.now(),
               be_triggered: !!p.be_triggered,
               optionContractName: p.optionContractName || `${sym} Option`,
+              optionType: p.optionType,
+              optionStrike: p.optionStrike,
+              optionEntryPremium: p.optionEntryPremium,
+              lotSizeMultiplier: p.lotSizeMultiplier || optSpec.lotSize,
               currency: p.currency || "₹",
             };
           })
@@ -238,7 +307,7 @@ export function loadDemoAccount(): DemoAccountState {
         ...INITIAL_ACCOUNT_STATE.auto_bot,
         ...(parsed.auto_bot || {}),
         enabled: parsed.auto_bot?.enabled !== undefined ? parsed.auto_bot.enabled : true,
-        market_mode: parsed.auto_bot?.market_mode === "STRICT_REAL" ? "STRICT_REAL" : "24_7_PRACTICE",
+        market_mode: parsed.auto_bot?.market_mode === "24_7_PRACTICE" ? "24_7_PRACTICE" : "STRICT_REAL",
         logs: Array.isArray(parsed.auto_bot?.logs) ? parsed.auto_bot.logs : INITIAL_ACCOUNT_STATE.auto_bot.logs,
       },
     };
@@ -260,7 +329,7 @@ export function saveDemoAccount(state: DemoAccountState): void {
 }
 
 /**
- * Reset account back to pristine ₹1,00,000
+ * Reset account back to pristine ₹10,00,000 (10 Lakhs INR)
  */
 export function resetDemoAccount(): DemoAccountState {
   const resetState: DemoAccountState = {
@@ -276,14 +345,14 @@ export function resetDemoAccount(): DemoAccountState {
     auto_bot: {
       enabled: true,
       risk_percent: 1.0,
-      market_mode: "24_7_PRACTICE",
+      market_mode: "STRICT_REAL",
       strategy_mode: "VOLUME_PROFILE_ONLY",
       logs: [
         {
           id: `rst-${Date.now()}`,
           timestamp: Date.now(),
           type: "info",
-          message: "Account reset to initial ₹1,00,000.00 demo balance. Pivot-Anchored Volume Profile (PAVP) Auto-Bot active & scanning.",
+          message: "Account reset to initial ₹10,00,000.00 demo balance (10 Lakhs INR). Pivot-Anchored Volume Profile (PAVP) Auto-Bot active & scanning.",
         },
       ],
     },
@@ -294,21 +363,19 @@ export function resetDemoAccount(): DemoAccountState {
 
 /**
  * Contract size multipliers:
- * NIFTY: 25 qty per lot
+ * NIFTY: 65 qty per lot
  * BANKNIFTY: 15 qty per lot
- * FINNIFTY: 25 qty per lot
+ * FINNIFTY: 65 qty per lot
  * SENSEX: 10 qty per lot
  * CRUDEOIL (MCX): 100 bbl per lot
  * NATURALGAS (MCX): 1250 mmBtu per lot
+ * F&O Stocks: Exact official NSE lot size (e.g. RELIANCE: 250, TATAMOTORS: 575, TATASTEEL: 5500)
  */
 export function getContractSize(symbol: AssetSymbol, pos?: DemoPosition): number {
   if (pos?.lotSizeMultiplier && pos.lotSizeMultiplier > 0) return pos.lotSizeMultiplier;
-  if (symbol === "NIFTY" || symbol === "FINNIFTY") return 25;
-  if (symbol === "BANKNIFTY") return 15;
-  if (symbol === "SENSEX") return 10;
-  if (symbol === "CRUDEOIL") return 100;
-  if (symbol === "NATURALGAS") return 1250;
-  return 25;
+  const spec = getOptionSpec(symbol);
+  if (spec && spec.lotSize > 0) return spec.lotSize;
+  return 65;
 }
 
 /**
@@ -385,14 +452,14 @@ export function executeDemoTrade(
 ): { success: boolean; state: DemoAccountState; message: string } {
   const { symbol, type, volume, quote, sl, tp, comment } = params;
 
-  // Enforce Real Interbank Market Hours if STRICT_REAL mode is selected
+  // Enforce Real Market Hours & 3:00 PM Cutoff if STRICT_REAL mode is selected
   if (state.auto_bot.market_mode === "STRICT_REAL") {
-    const marketCheck = isForexMarketOpen();
+    const marketCheck = isIndianMarketOpen(symbol);
     if (!marketCheck.isOpen) {
       return {
         success: false,
         state,
-        message: `Execution blocked: Market closed for the weekend (${marketCheck.statusText}). Switch to "24/7 Practice Mode" to execute simulated trades.`,
+        message: `Execution blocked: ${marketCheck.statusText}. Trades are restricted to market hours with strict 3:00 PM cutoff for Indian stocks. Switch to "24/7 Practice Mode" to test anytime.`,
       };
     }
   }
@@ -587,8 +654,9 @@ export function setPositionBreakEven(
 
   const pos = state.open_positions[posIndex];
   const cur = pos.currency || state.currency || "₹";
-  // Entry price with small buffer
-  const newSL = pos.type === "BUY" ? pos.price_open + 0.2 : pos.price_open - 0.2;
+  const isPE = pos.optionType === "PE";
+  const buffer = pos.currency === "$" ? 0.2 : 0.5;
+  const newSL = isPE ? pos.price_open - buffer : pos.price_open + buffer;
 
   const updatedPos: DemoPosition = {
     ...pos,
@@ -621,7 +689,7 @@ export function setPositionBreakEven(
   return {
     success: true,
     state: nextState,
-    message: `Stop Loss for #${ticket} moved to Break-Even ($${updatedPos.sl.toFixed(2)})`,
+    message: `Stop Loss for #${ticket} moved to Break-Even (${cur}${updatedPos.sl.toFixed(2)})`,
   };
 }
 
@@ -660,13 +728,26 @@ export function tickDemoPositions(
 
     const currentPrice = pos.type === "BUY" ? quote.bid : quote.ask;
     const profit = calculatePositionProfit(pos, quote);
+    const isPE = pos.optionType === "PE";
+    const isCE = pos.optionType === "CE";
 
-    // 1. Check Take Profit Hit (ensure TP is validly beyond entry price)
+    // 1. Check Take Profit Hit
     let tpHit = false;
-    if (pos.type === "BUY" && pos.tp > 0 && pos.tp > pos.price_open && currentPrice >= pos.tp) {
-      tpHit = true;
-    } else if (pos.type === "SELL" && pos.tp > 0 && pos.tp < pos.price_open && currentPrice <= pos.tp) {
-      tpHit = true;
+    if (isPE) {
+      // Put Option: Spot dropping below target triggers TP
+      if (pos.tp > 0 && currentPrice <= pos.tp) {
+        tpHit = true;
+      }
+    } else if (isCE || pos.type === "BUY") {
+      // Call Option or BUY: Spot rising above target triggers TP
+      if (pos.tp > 0 && currentPrice >= pos.tp) {
+        tpHit = true;
+      }
+    } else {
+      // SELL / Short: Spot falling below target triggers TP
+      if (pos.tp > 0 && currentPrice <= pos.tp) {
+        tpHit = true;
+      }
     }
 
     if (tpHit) {
@@ -676,13 +757,26 @@ export function tickDemoPositions(
 
     // 2. Check Stop Loss Hit
     let slHit = false;
-    if (pos.type === "BUY" && pos.sl > 0) {
-      if (pos.be_triggered ? currentPrice <= pos.sl : (pos.sl < pos.price_open && currentPrice <= pos.sl)) {
-        slHit = true;
+    if (isPE) {
+      // Put Option: Spot rising above SL triggers Stop Loss
+      if (pos.sl > 0) {
+        if (pos.be_triggered ? currentPrice >= pos.sl : (pos.sl > pos.price_open && currentPrice >= pos.sl)) {
+          slHit = true;
+        }
       }
-    } else if (pos.type === "SELL" && pos.sl > 0) {
-      if (pos.be_triggered ? currentPrice >= pos.sl : (pos.sl > pos.price_open && currentPrice >= pos.sl)) {
-        slHit = true;
+    } else if (isCE || pos.type === "BUY") {
+      // Call Option or BUY: Spot falling below SL triggers Stop Loss
+      if (pos.sl > 0) {
+        if (pos.be_triggered ? currentPrice <= pos.sl : (pos.sl < pos.price_open && currentPrice <= pos.sl)) {
+          slHit = true;
+        }
+      }
+    } else {
+      // SELL / Short: Spot rising above SL triggers Stop Loss
+      if (pos.sl > 0) {
+        if (pos.be_triggered ? currentPrice >= pos.sl : (pos.sl > pos.price_open && currentPrice >= pos.sl)) {
+          slHit = true;
+        }
       }
     }
 
@@ -699,7 +793,8 @@ export function tickDemoPositions(
     const curSym = pos.currency || stateCopy.currency || "₹";
     const beProfitThreshold = pos.currency === "$" ? 15.0 : 500.0;
     if (!pos.be_triggered && profit >= beProfitThreshold) {
-      const newSL = pos.type === "BUY" ? pos.price_open + 0.5 : pos.price_open - 0.5;
+      const buffer = pos.currency === "$" ? 0.2 : 0.5;
+      const newSL = isPE ? pos.price_open - buffer : pos.price_open + buffer;
       updatedPos.sl = Math.round(newSL * 100) / 100;
       updatedPos.be_triggered = true;
 
@@ -773,6 +868,14 @@ export function evaluateAutoBot(
 ): DemoAccountState {
   if (!state.auto_bot || !state.auto_bot.enabled) {
     return state;
+  }
+
+  // Market hours & 3:00 PM cutoff enforcement for Indian stock market in STRICT_REAL mode
+  if (state.auto_bot.market_mode === "STRICT_REAL") {
+    const marketCheck = isIndianMarketOpen(quote.symbol);
+    if (!marketCheck.isOpen) {
+      return state;
+    }
   }
 
   // Limit max concurrent open positions to 4 to allow active multi-asset options trading
