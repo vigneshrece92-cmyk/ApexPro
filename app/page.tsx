@@ -15,6 +15,7 @@ import {
   generateTradeSignalFromData,
   calculatePivotAnchoredVolumeProfile,
   detectPAVPSignals,
+  getPAVPConfigForTimeframe,
 } from "@/lib/technicals";
 import { getRecommendedOptionContract, getOptionSpec } from "@/lib/optionsEngine";
 import { getInitialInstitutionalAlerts } from "@/lib/alertDetectors";
@@ -44,6 +45,7 @@ import {
   executeDemoTrade,
   tickDemoPositions,
   evaluateAutoBot,
+  isIndianMarketOpen,
 } from "@/lib/demoTradingEngine";
 import { sendTelegramNotification } from "@/lib/telegramBroadcaster";
 
@@ -207,21 +209,28 @@ export default function TerminalDashboard() {
     }
   }, [demoAccount.open_positions, demoAccount.history, isMounted]);
 
-  // 2. Active Chart 15M PAVP Signal Detector & Instant Telegram Broadcaster
+  // 2. Active Chart PAVP Signal Detector & Instant Telegram Broadcaster
   useEffect(() => {
     if (!isMounted || !candles || candles.length < 15 || !quote) return;
 
     try {
       const precision = quote.pipPrecision || 2;
-      const pavp = calculatePivotAnchoredVolumeProfile(candles, 15, 28, 0.68, precision);
+      const pavpConf = getPAVPConfigForTimeframe(timeframe);
+      const pavp = calculatePivotAnchoredVolumeProfile(
+        candles,
+        pavpConf.pvtLength,
+        pavpConf.profileLevels,
+        pavpConf.valueAreaPct,
+        precision
+      );
       if (!pavp || pavp.poc <= 0) return;
 
       const { signals } = detectPAVPSignals(candles, pavp, activeSymbol, precision);
       if (!signals || signals.length === 0) return;
 
-      // Scan signals on fresh candles (within the last 3 candles)
+      // Scan signals on recent candles (within the last 5 candles)
       for (const sig of signals) {
-        const isRecent = typeof sig.candleIndex === "number" ? sig.candleIndex >= candles.length - 3 : true;
+        const isRecent = typeof sig.candleIndex === "number" ? sig.candleIndex >= candles.length - 5 : true;
         if (!isRecent) continue;
 
         const sigKey = `${activeSymbol}_${sig.action}_${sig.time || sig.candleIndex}_${sig.levelPrice}`;
@@ -233,8 +242,9 @@ export default function TerminalDashboard() {
         const optSpec = getOptionSpec(activeSymbol);
         const curSym = quote.currency || "₹";
         const emoji = sig.action === "BUY CE" ? "🟢" : "🔴";
+        const marketStatus = isIndianMarketOpen(activeSymbol);
 
-        const msg = `🚨 <b>Apex Terminal 15M PAVP Signal Alert</b>\n━━━━━━━━━━━━━━━━━━━━\n<b>Instrument:</b> ${activeSymbol} [${timeframe.toUpperCase()}]\n<b>Signal:</b> ${emoji} <b>${sig.label}</b>\n<b>Action:</b> ${sig.action} (ATM ${optContract.type})\n<b>Trigger Price:</b> ${curSym}${sig.levelPrice.toFixed(precision)}\n<b>Stop Loss:</b> ${curSym}${sig.sl.toFixed(precision)}\n<b>Target 1 (POC Magnet):</b> ${curSym}${sig.tp1.toFixed(precision)}\n<b>Target 2:</b> ${curSym}${sig.tp2.toFixed(precision)}\n<b>Recommended Option:</b> ${activeSymbol} ${optContract.strike} ${optContract.type} (${optSpec.lotSize} Qty / 1 Lot) @ ~${curSym}${optContract.premiumAsk.toFixed(2)}\n<b>Expiry:</b> ${optContract.expiry}\n<b>Analysis:</b> ${sig.rationale}\n<i>Apex Autonomous Options & Commodities Engine</i>`;
+        const msg = `🚨 <b>Apex Terminal VIP Signal Alert</b>\n━━━━━━━━━━━━━━━━━━━━\n<b>Instrument:</b> ${activeSymbol} [${timeframe.toUpperCase()}]\n<b>Signal:</b> ${emoji} <b>${sig.label}</b>\n<b>Action:</b> ${sig.action} (ATM ${optContract.type})\n<b>Trigger Price:</b> ${curSym}${sig.levelPrice.toFixed(precision)}\n<b>Stop Loss:</b> ${curSym}${sig.sl.toFixed(precision)}\n<b>Target 1 (POC Magnet):</b> ${curSym}${sig.tp1.toFixed(precision)}\n<b>Target 2 (VA Target):</b> ${curSym}${sig.tp2.toFixed(precision)}\n<b>Recommended Option:</b> ${activeSymbol} ${optContract.strike} ${optContract.type} (${optSpec.lotSize} Qty / 1 Lot) @ ~${curSym}${optContract.premiumAsk.toFixed(2)}\n<b>Expiry:</b> ${optContract.expiry}\n<b>Auto-Trade:</b> ${marketStatus.isOpen ? `✅ 1 Lot (${optSpec.lotSize} Qty) Executed in Demo` : "⏳ Pending Market Open (09:15 - 15:00 IST Cutoff)"}\n<b>Analysis:</b> ${sig.rationale}\n<i>Apex Autonomous Options & Commodities Engine</i>`;
 
         sendTelegramNotification(msg).catch((err) =>
           console.warn("Telegram signal broadcast error:", err)
@@ -245,13 +255,18 @@ export default function TerminalDashboard() {
     }
   }, [candles, quote, activeSymbol, timeframe, isMounted]);
 
-  // 3. Multi-Asset Background Scanner (Watches NIFTY, BANKNIFTY, FINNIFTY, CRUDEOIL, NATURALGAS)
+  // 3. Multi-Asset Background Scanner (Watches all 36 Indices, MCX Commodities & 30 High-Volume F&O Stocks)
   useEffect(() => {
     if (!isMounted) return;
 
     const monitoredSymbols: AssetSymbol[] = [
-      "NIFTY", "BANKNIFTY", "FINNIFTY", "CRUDEOIL", "NATURALGAS",
-      "RELIANCE", "TATAMOTORS", "TATASTEEL", "HDFCBANK", "SBIN"
+      "NIFTY", "BANKNIFTY", "FINNIFTY", "CRUDEOIL", "NATURALGAS", "SENSEX",
+      "RELIANCE", "TATAMOTORS", "TATASTEEL", "HDFCBANK", "SBIN",
+      "ICICIBANK", "INFY", "TCS", "BAJFINANCE", "MARUTI",
+      "LT", "AXISBANK", "KOTAKBANK", "BHARTIARTL", "ADANIENT",
+      "ADANIPORTS", "HINDUNILVR", "ITC", "SUNPHARMA", "TITAN",
+      "JSWSTEEL", "COALINDIA", "NTPC", "POWERGRID", "BPCL",
+      "ONGC", "VEDL", "BHEL", "DLF", "BEL"
     ];
 
     const runMultiAssetScan = () => {
@@ -271,7 +286,7 @@ export default function TerminalDashboard() {
           if (!signals || signals.length === 0) return;
 
           for (const sig of signals) {
-            const isRecent = typeof sig.candleIndex === "number" ? sig.candleIndex >= symCandles.length - 2 : true;
+            const isRecent = typeof sig.candleIndex === "number" ? sig.candleIndex >= symCandles.length - 4 : true;
             if (!isRecent) continue;
 
             const sigKey = `${sym}_${sig.action}_${sig.time || sig.candleIndex}_${sig.levelPrice}`;
@@ -283,14 +298,15 @@ export default function TerminalDashboard() {
             const optSpec = getOptionSpec(sym);
             const curSym = symQuote.currency || "₹";
             const emoji = sig.action === "BUY CE" ? "🟢" : "🔴";
+            const marketStatus = isIndianMarketOpen(sym);
 
-            const msg = `🚨 <b>Apex Terminal 15M PAVP Signal Alert</b>\n━━━━━━━━━━━━━━━━━━━━\n<b>Instrument:</b> ${sym} [15M]\n<b>Signal:</b> ${emoji} <b>${sig.label}</b>\n<b>Action:</b> ${sig.action} (ATM ${optContract.type})\n<b>Trigger Price:</b> ${curSym}${sig.levelPrice.toFixed(precision)}\n<b>Stop Loss:</b> ${curSym}${sig.sl.toFixed(precision)}\n<b>Target 1 (POC Magnet):</b> ${curSym}${sig.tp1.toFixed(precision)}\n<b>Target 2:</b> ${curSym}${sig.tp2.toFixed(precision)}\n<b>Recommended Option:</b> ${sym} ${optContract.strike} ${optContract.type} (${optSpec.lotSize} Qty / 1 Lot) @ ~${curSym}${optContract.premiumAsk.toFixed(2)}\n<b>Expiry:</b> ${optContract.expiry}\n<b>Analysis:</b> ${sig.rationale}\n<i>Apex Autonomous Options & Commodities Engine</i>`;
+            const msg = `🚨 <b>Apex Terminal VIP Signal Alert</b>\n━━━━━━━━━━━━━━━━━━━━\n<b>Instrument:</b> ${sym} [15M]\n<b>Signal:</b> ${emoji} <b>${sig.label}</b>\n<b>Action:</b> ${sig.action} (ATM ${optContract.type})\n<b>Trigger Price:</b> ${curSym}${sig.levelPrice.toFixed(precision)}\n<b>Stop Loss:</b> ${curSym}${sig.sl.toFixed(precision)}\n<b>Target 1 (POC Magnet):</b> ${curSym}${sig.tp1.toFixed(precision)}\n<b>Target 2 (VA Target):</b> ${curSym}${sig.tp2.toFixed(precision)}\n<b>Recommended Option:</b> ${sym} ${optContract.strike} ${optContract.type} (${optSpec.lotSize} Qty / 1 Lot) @ ~${curSym}${optContract.premiumAsk.toFixed(2)}\n<b>Expiry:</b> ${optContract.expiry}\n<b>Auto-Trade:</b> ${marketStatus.isOpen ? `✅ 1 Lot (${optSpec.lotSize} Qty) Executed in Demo` : "⏳ Pending Market Open (09:15 - 15:00 IST Cutoff)"}\n<b>Analysis:</b> ${sig.rationale}\n<i>Apex Autonomous Options & Commodities Engine</i>`;
 
             sendTelegramNotification(msg).catch((err) =>
               console.warn("Multi-asset telegram broadcast error:", err)
             );
 
-            // If auto-bot is enabled, trigger 1 lot demo execution for this symbol!
+            // If auto-bot is enabled and market is open, trigger 1 lot demo execution for this symbol!
             setDemoAccount((prev) => {
               if (!prev?.auto_bot?.enabled) return prev;
               return evaluateAutoBot(prev, symQuote, alerts, allQuotes, symCandles, [sig], "15m");
@@ -499,6 +515,9 @@ export default function TerminalDashboard() {
       sendTelegramNotification(
         `🎯 <b>OptionAlgo 1-Click Trade Executed</b>\n━━━━━━━━━━━━━━━━━━━━\n<b>Instrument:</b> ${contract.symbol} ${contract.expiry} ${contract.strike} ${contract.type}\n<b>Side:</b> ${action} 1 Lot (${contract.lotSize} Qty)\n<b>Premium:</b> ₹${optPrice}\n<b>Spot Ref:</b> ₹${symQuote.bid}\n<b>Delta:</b> ${contract.delta} | <b>Theta:</b> ${contract.theta}\n<i>Executed directly from OptionAlgo Chart Terminal</i>`
       ).catch(console.error);
+      return { success: true, message: `Executed 1 Lot (${contract.lotSize} Qty) @ ₹${optPrice}` };
+    } else {
+      return { success: false, message: res.message || "Market Closed (NSE 09:15 - 15:00 IST Cutoff)" };
     }
   };
 

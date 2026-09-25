@@ -81,7 +81,7 @@ interface ChartTerminalProps {
   onChangeTimeframe: (tf: TimeFrame) => void;
   onAnalyzeLiveChart: () => void;
   isAnalyzing?: boolean;
-  onExecuteOptionTrade?: (contract: OptionContract, action: "BUY" | "SELL") => void;
+  onExecuteOptionTrade?: (contract: OptionContract, action: "BUY" | "SELL") => { success: boolean; message?: string } | void;
 }
 
 export const ChartTerminal: React.FC<ChartTerminalProps> = ({
@@ -219,13 +219,17 @@ export const ChartTerminal: React.FC<ChartTerminalProps> = ({
   // Quick 1-click trade execution handler
   const handleQuickTrade = (contract: OptionContract, action: "BUY" | "SELL" = "BUY") => {
     if (onExecuteOptionTrade) {
-      onExecuteOptionTrade(contract, action);
-      setTradeSuccessMsg(
-        `✓ Executed ${action} 1 Lot ${contract.symbol} ${contract.strike} ${contract.type} (${contract.lotSize} Qty) @ ₹${(
-          contract.premiumAsk || contract.premiumBid
-        ).toFixed(2)}`
-      );
-      setTimeout(() => setTradeSuccessMsg(null), 3500);
+      const res = onExecuteOptionTrade(contract, action) as any;
+      if (res && res.success === false) {
+        setTradeSuccessMsg(`⚠️ ${res.message || "Market Closed (NSE 09:15 - 15:00 IST Cutoff)"}`);
+      } else {
+        setTradeSuccessMsg(
+          `✓ Executed ${action} 1 Lot ${contract.symbol} ${contract.strike} ${contract.type} (${contract.lotSize} Qty) @ ₹${(
+            contract.premiumAsk || contract.premiumBid
+          ).toFixed(2)} [Telegram Alert Sent 🚀]`
+        );
+      }
+      setTimeout(() => setTradeSuccessMsg(null), 4000);
     }
   };
 

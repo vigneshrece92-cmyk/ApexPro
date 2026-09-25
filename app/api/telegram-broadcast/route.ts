@@ -27,35 +27,28 @@ export async function POST(req: NextRequest) {
 
     const now = Date.now();
 
-    // 1. Minimum global cooldown throttle (3 seconds)
-    const throttleMs = isTest ? 1000 : 3000;
+    // 1. Safe rate limiting with auto-pacing (avoids dropping signals across different assets)
+    const throttleMs = isTest ? 500 : 800;
     const timeSinceLast = now - lastBroadcastTimestamp;
     if (timeSinceLast < throttleMs) {
-      console.warn(`[Telegram Firewall] Throttled message. Cooldown active (${Math.round((throttleMs - timeSinceLast) / 1000)}s remaining)`);
-      return NextResponse.json({
-        success: true,
-        throttled: true,
-        message: "Message safely throttled by anti-spam rate limiter.",
-      });
+      await new Promise((resolve) => setTimeout(resolve, throttleMs - timeSinceLast));
     }
 
-    // 2. Content deduplication check (differentiates distinct tickets)
+    // 2. Content deduplication check (prevents identical repeated alerts within 45s)
     if (!isTest) {
-      const isDistinctTrade = message.includes("Ticket:");
-      const normalizedKey = isDistinctTrade
-        ? message.replace(/\d{2}:\d{2}:\d{2}/g, "").trim()
-        : message.replace(/Ticket:\s*#?\d+/g, "").replace(/\d{2}:\d{2}:\d{2}/g, "").trim();
+      // Key on the first 120 chars (includes instrument, direction, and level)
+      const normalizedKey = message.slice(0, 120).replace(/\d{2}:\d{2}:\d{2}/g, "").trim();
 
       const lastSeen = recentMessageHashes.get(normalizedKey);
-      if (lastSeen && now - lastSeen < DEDUP_WINDOW_MS) {
-        console.warn("[Telegram Firewall] Duplicate message dropped within window.");
+      if (lastSeen && Date.now() - lastSeen < 45000) {
+        console.warn("[Telegram Firewall] Duplicate message dropped within 45s window.");
         return NextResponse.json({
           success: true,
           throttled: true,
           message: "Duplicate alert dropped within anti-spam window.",
         });
       }
-      recentMessageHashes.set(normalizedKey, now);
+      recentMessageHashes.set(normalizedKey, Date.now());
     }
 
     // Cleanup old hashes periodically

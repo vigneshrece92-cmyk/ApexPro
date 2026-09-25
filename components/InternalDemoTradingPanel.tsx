@@ -210,6 +210,58 @@ export const InternalDemoTradingPanel: React.FC<InternalDemoTradingPanelProps> =
     }
   };
 
+  const handleTestSignalBroadcast = async () => {
+    setIsTestingTg(true);
+    try {
+      const sampleMsg = [
+        "🚨 <b>Apex Pro VIP Signal Alert</b>",
+        "━━━━━━━━━━━━━━━━━━━━",
+        "<b>Instrument:</b> NIFTY 50 [15M]",
+        "<b>Signal:</b> 🟢 <b>BUY CE @ VAL 23,350.00</b>",
+        "<b>Action:</b> BUY CE (ATM CALL)",
+        "<b>Trigger Price:</b> ₹23,350.00",
+        "<b>Stop Loss:</b> ₹23,280.00",
+        "<b>Target 1 (POC Magnet):</b> ₹23,450.00",
+        "<b>Target 2 (VAH Target):</b> ₹23,520.00",
+        "<b>Recommended Option:</b> NIFTY 23350 CE (65 Qty / 1 Lot)",
+        "<b>Premium:</b> ~₹132.50",
+        "<b>Expiry:</b> 27 MAR 2026",
+        "<b>Auto-Trade:</b> ✅ 1 Lot (65 Qty) Executed in Demo Virtual Broker",
+        "<b>Analysis:</b> Bullish sweep and reclaim off Value Area Low (VAL). Strong buying absorption with rotation toward Point of Control (POC).",
+        "━━━━━━━━━━━━━━━━━━━━",
+        "<i>Apex Terminal Autonomous Options Engine • @profitcatcher_bot</i>"
+      ].join("\n");
+
+      const res = await fetch("/api/telegram-broadcast", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          isTest: true,
+          message: sampleMsg,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setStatusMessage({
+          type: "success",
+          text: "✅ Sample VIP Signal Alert delivered to @profitcatcher_bot (-5005740750)!",
+        });
+      } else {
+        setStatusMessage({
+          type: "error",
+          text: `Signal dispatch failed: ${data.error}`,
+        });
+      }
+    } catch {
+      setStatusMessage({
+        type: "error",
+        text: "Failed to connect to Telegram endpoint",
+      });
+    } finally {
+      setIsTestingTg(false);
+    }
+  };
+
   const handleClearLogs = () => {
     const updatedState: DemoAccountState = {
       ...account,
@@ -640,6 +692,14 @@ export const InternalDemoTradingPanel: React.FC<InternalDemoTradingPanelProps> =
                     title="Send test ping to Telegram channel"
                   >
                     {isTestingTg ? "Pinging..." : "Test Ping"}
+                  </button>
+                  <button
+                    onClick={handleTestSignalBroadcast}
+                    disabled={isTestingTg}
+                    className="text-[10px] px-2 py-0.5 rounded bg-emerald-600/30 hover:bg-emerald-600/50 text-emerald-300 hover:text-white border border-emerald-500/40 font-mono transition-all disabled:opacity-50"
+                    title="Send sample VIP Option Signal alert to Telegram channel"
+                  >
+                    {isTestingTg ? "Sending..." : "Send Signal Alert"}
                   </button>
                   <button
                     onClick={handleClearLogs}
