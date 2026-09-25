@@ -47,7 +47,12 @@ import {
   evaluateAutoBot,
   isIndianMarketOpen,
 } from "@/lib/demoTradingEngine";
-import { sendTelegramNotification } from "@/lib/telegramBroadcaster";
+import {
+  sendTelegramNotification,
+  formatShortEntryMessage,
+  formatShortExitMessage,
+  formatShort1ClickExecutedMessage,
+} from "@/lib/telegramBroadcaster";
 
 export default function TerminalDashboard() {
   // Client mount hydration guard
@@ -184,12 +189,19 @@ export default function TerminalDashboard() {
           const openPrice = typeof pos.price_open === "number" ? pos.price_open.toFixed(2) : "0.00";
           const sl = typeof pos.sl === "number" ? pos.sl.toFixed(2) : "0.00";
           const tp = typeof pos.tp === "number" ? pos.tp.toFixed(2) : "0.00";
-          const contractDesc = pos.optionContractName
-            ? `${pos.optionContractName} (${pos.volume} Lot / ${pos.lotSizeMultiplier} Qty)`
-            : `${pos.type} ${pos.volume} ${pos.symbol}`;
-          sendTelegramNotification(
-            `🤖 <b>Apex Terminal PAVP Auto-Bot Executed</b>\n━━━━━━━━━━━━━━━━━━━━\n<b>Instrument:</b> ${contractDesc}\n<b>Entry:</b> ${curSym}${openPrice}\n<b>Stop Loss:</b> ${curSym}${sl}\n<b>Take Profit:</b> ${curSym}${tp}\n<b>Rationale:</b> ${pos.comment || "Pivot-Anchored Volume Profile (PAVP)"}\n<b>Ticket:</b> #${pos.ticket}\n<i>Apex Terminal Autonomous Options Engine</i>`
-          ).catch((err) => console.warn("Telegram broadcast error:", err));
+          const desc = pos.optionContractName || `${pos.symbol} ${pos.type}`;
+          const lots = pos.volume || 1;
+          const totalQty = pos.lotSizeMultiplier ? lots * pos.lotSizeMultiplier : lots;
+          const msg = [
+            `🤖 <b>AUTO-BOT: ${desc}</b>`,
+            "━━━━━━━━━━━━━━━",
+            `• <b>Entry:</b> ${curSym}${openPrice}`,
+            `• <b>SL:</b> ${curSym}${sl}`,
+            `• <b>Target:</b> ${curSym}${tp}`,
+            `• <b>Lot:</b> ${lots} Lot (${totalQty} Qty)`,
+            `• <b>Ticket:</b> #${pos.ticket}`,
+          ].join("\n");
+          sendTelegramNotification(msg).catch((err) => console.warn("Telegram broadcast error:", err));
         }
       }
     }
@@ -201,10 +213,17 @@ export default function TerminalDashboard() {
         notifiedClosedTicketsRef.current.add(closed.ticket);
         const curSym = closed.currency || "₹";
         const profit = typeof closed.profit === "number" ? closed.profit : 0;
-        const closePrice = typeof closed.price_close === "number" ? closed.price_close.toFixed(2) : "0.00";
-        sendTelegramNotification(
-          `🎯 <b>Apex Terminal Position Exit</b>\n━━━━━━━━━━━━━━━━━━━━\n<b>Ticket:</b> #${closed.ticket} ${closed.optionContractName || closed.symbol}\n<b>Result:</b> ${profit >= 0 ? "🟢 Profit: +" : "🔴 Loss: "}${curSym}${Math.abs(profit).toFixed(2)}\n<b>Exit Reason:</b> ${closed.close_reason || "Market Exit"}\n<b>Close Price:</b> ${curSym}${closePrice}\n<i>Apex Terminal Virtual Broker</i>`
-        ).catch((err) => console.warn("Telegram broadcast error:", err));
+        const closePrice = typeof closed.price_close === "number" ? closed.price_close : 0;
+        const exitMsg = formatShortExitMessage({
+          symbol: closed.symbol,
+          contractName: closed.optionContractName,
+          profit,
+          closePrice,
+          closeReason: closed.close_reason,
+          currency: curSym,
+          ticket: closed.ticket,
+        });
+        sendTelegramNotification(exitMsg).catch((err) => console.warn("Telegram broadcast error:", err));
       }
     }
   }, [demoAccount.open_positions, demoAccount.history, isMounted]);
@@ -241,10 +260,18 @@ export default function TerminalDashboard() {
         const optContract = getRecommendedOptionContract(activeSymbol, sig.action, quote.bid);
         const optSpec = getOptionSpec(activeSymbol);
         const curSym = quote.currency || "₹";
-        const emoji = sig.action === "BUY CE" ? "🟢" : "🔴";
         const marketStatus = isIndianMarketOpen(activeSymbol);
 
-        const msg = `🚨 <b>Apex Terminal VIP Signal Alert</b>\n━━━━━━━━━━━━━━━━━━━━\n<b>Instrument:</b> ${activeSymbol} [${timeframe.toUpperCase()}]\n<b>Signal:</b> ${emoji} <b>${sig.label}</b>\n<b>Action:</b> ${sig.action} (ATM ${optContract.type})\n<b>Trigger Price:</b> ${curSym}${sig.levelPrice.toFixed(precision)}\n<b>Stop Loss:</b> ${curSym}${sig.sl.toFixed(precision)}\n<b>Target 1 (POC Magnet):</b> ${curSym}${sig.tp1.toFixed(precision)}\n<b>Target 2 (VA Target):</b> ${curSym}${sig.tp2.toFixed(precision)}\n<b>Recommended Option:</b> ${activeSymbol} ${optContract.strike} ${optContract.type} (${optSpec.lotSize} Qty / 1 Lot) @ ~${curSym}${optContract.premiumAsk.toFixed(2)}\n<b>Expiry:</b> ${optContract.expiry}\n<b>Auto-Trade:</b> ${marketStatus.isOpen ? `✅ 1 Lot (${optSpec.lotSize} Qty) Executed in Demo` : "⏳ Pending Market Open (09:15 - 15:00 IST Cutoff)"}\n<b>Analysis:</b> ${sig.rationale}\n<i>Apex Autonomous Options & Commodities Engine</i>`;
+        const msg = formatShortEntryMessage({
+          symbol: activeSymbol,
+          strike: optContract.strike,
+          type: optContract.type,
+          entryPremium: optContract.premiumAsk,
+          lotSize: optSpec.lotSize,
+          expiry: optContract.expiry,
+          currency: curSym,
+          demoStatus: marketStatus.isOpen ? "executed" : "pending_market_open",
+        });
 
         sendTelegramNotification(msg).catch((err) =>
           console.warn("Telegram signal broadcast error:", err)
@@ -297,10 +324,18 @@ export default function TerminalDashboard() {
             const optContract = getRecommendedOptionContract(sym, sig.action, symQuote.bid);
             const optSpec = getOptionSpec(sym);
             const curSym = symQuote.currency || "₹";
-            const emoji = sig.action === "BUY CE" ? "🟢" : "🔴";
             const marketStatus = isIndianMarketOpen(sym);
 
-            const msg = `🚨 <b>Apex Terminal VIP Signal Alert</b>\n━━━━━━━━━━━━━━━━━━━━\n<b>Instrument:</b> ${sym} [15M]\n<b>Signal:</b> ${emoji} <b>${sig.label}</b>\n<b>Action:</b> ${sig.action} (ATM ${optContract.type})\n<b>Trigger Price:</b> ${curSym}${sig.levelPrice.toFixed(precision)}\n<b>Stop Loss:</b> ${curSym}${sig.sl.toFixed(precision)}\n<b>Target 1 (POC Magnet):</b> ${curSym}${sig.tp1.toFixed(precision)}\n<b>Target 2 (VA Target):</b> ${curSym}${sig.tp2.toFixed(precision)}\n<b>Recommended Option:</b> ${sym} ${optContract.strike} ${optContract.type} (${optSpec.lotSize} Qty / 1 Lot) @ ~${curSym}${optContract.premiumAsk.toFixed(2)}\n<b>Expiry:</b> ${optContract.expiry}\n<b>Auto-Trade:</b> ${marketStatus.isOpen ? `✅ 1 Lot (${optSpec.lotSize} Qty) Executed in Demo` : "⏳ Pending Market Open (09:15 - 15:00 IST Cutoff)"}\n<b>Analysis:</b> ${sig.rationale}\n<i>Apex Autonomous Options & Commodities Engine</i>`;
+            const msg = formatShortEntryMessage({
+              symbol: sym,
+              strike: optContract.strike,
+              type: optContract.type,
+              entryPremium: optContract.premiumAsk,
+              lotSize: optSpec.lotSize,
+              expiry: optContract.expiry,
+              currency: curSym,
+              demoStatus: marketStatus.isOpen ? "executed" : "pending_market_open",
+            });
 
             sendTelegramNotification(msg).catch((err) =>
               console.warn("Multi-asset telegram broadcast error:", err)
@@ -513,7 +548,15 @@ export default function TerminalDashboard() {
       saveDemoAccount(res.state);
       const optPrice = (contract.premiumAsk || contract.premiumBid).toFixed(2);
       sendTelegramNotification(
-        `🎯 <b>OptionAlgo 1-Click Trade Executed</b>\n━━━━━━━━━━━━━━━━━━━━\n<b>Instrument:</b> ${contract.symbol} ${contract.expiry} ${contract.strike} ${contract.type}\n<b>Side:</b> ${action} 1 Lot (${contract.lotSize} Qty)\n<b>Premium:</b> ₹${optPrice}\n<b>Spot Ref:</b> ₹${symQuote.bid}\n<b>Delta:</b> ${contract.delta} | <b>Theta:</b> ${contract.theta}\n<i>Executed directly from OptionAlgo Chart Terminal</i>`
+        formatShort1ClickExecutedMessage({
+          symbol: contract.symbol,
+          strike: contract.strike,
+          type: contract.type,
+          side: action,
+          price: +(contract.premiumAsk || contract.premiumBid),
+          lotSize: contract.lotSize,
+          expiry: contract.expiry,
+        })
       ).catch(console.error);
       return { success: true, message: `Executed 1 Lot (${contract.lotSize} Qty) @ ₹${optPrice}` };
     } else {

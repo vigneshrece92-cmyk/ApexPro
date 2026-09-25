@@ -26,7 +26,7 @@ import {
   evaluateAutoBot,
 } from "@/lib/demoTradingEngine";
 import { getRecommendedOptionContract, getOptionSpec } from "@/lib/optionsEngine";
-import { sendTelegramNotification } from "@/lib/telegramBroadcaster";
+import { sendTelegramNotification, formatShortEntryMessage } from "@/lib/telegramBroadcaster";
 import { Quote } from "@/lib/types";
 
 interface InternalDemoTradingPanelProps {
@@ -213,24 +213,19 @@ export const InternalDemoTradingPanel: React.FC<InternalDemoTradingPanelProps> =
   const handleTestSignalBroadcast = async () => {
     setIsTestingTg(true);
     try {
-      const sampleMsg = [
-        "🚨 <b>Apex Pro VIP Signal Alert</b>",
-        "━━━━━━━━━━━━━━━━━━━━",
-        "<b>Instrument:</b> NIFTY 50 [15M]",
-        "<b>Signal:</b> 🟢 <b>BUY CE @ VAL 23,350.00</b>",
-        "<b>Action:</b> BUY CE (ATM CALL)",
-        "<b>Trigger Price:</b> ₹23,350.00",
-        "<b>Stop Loss:</b> ₹23,280.00",
-        "<b>Target 1 (POC Magnet):</b> ₹23,450.00",
-        "<b>Target 2 (VAH Target):</b> ₹23,520.00",
-        "<b>Recommended Option:</b> NIFTY 23350 CE (65 Qty / 1 Lot)",
-        "<b>Premium:</b> ~₹132.50",
-        "<b>Expiry:</b> 27 MAR 2026",
-        "<b>Auto-Trade:</b> ✅ 1 Lot (65 Qty) Executed in Demo Virtual Broker",
-        "<b>Analysis:</b> Bullish sweep and reclaim off Value Area Low (VAL). Strong buying absorption with rotation toward Point of Control (POC).",
-        "━━━━━━━━━━━━━━━━━━━━",
-        "<i>Apex Terminal Autonomous Options Engine • @profitcatcher_bot</i>"
-      ].join("\n");
+      const sampleMsg = formatShortEntryMessage({
+        symbol: "NIFTY",
+        strike: 23350,
+        type: "CE",
+        entryPremium: 132.50,
+        slPremium: 95.00,
+        tp1Premium: 175.00,
+        tp2Premium: 215.00,
+        lotSize: 65,
+        expiry: "27-Mar-2026",
+        currency: "₹",
+        demoStatus: "executed",
+      });
 
       const res = await fetch("/api/telegram-broadcast", {
         method: "POST",
