@@ -59,11 +59,12 @@ export async function GET() {
               const data = await res.json();
               const res0 = data?.chart?.result?.[0];
               const regularPrice = res0?.meta?.regularMarketPrice;
+              const inrRate = 95.945;
               const livePrice =
                 item.symbol === "NATURALGAS"
-                  ? 289.30
+                  ? (regularPrice != null ? +(regularPrice * inrRate).toFixed(2) : 313.10)
                   : item.symbol === "CRUDEOIL"
-                  ? 8585.00
+                  ? (regularPrice != null ? +(regularPrice * inrRate * 1.0215).toFixed(2) : 9181.00)
                   : regularPrice != null
                   ? +(regularPrice * mult).toFixed(precision)
                   : defaultQuote.bid;
@@ -73,9 +74,9 @@ export async function GET() {
               const assetCandles: Candle[] = [];
 
               if (item.symbol === "NATURALGAS") {
-                assetCandles.push(...generateRealisticCandles("NATURALGAS", "15m", 50, 289.30));
+                assetCandles.push(...generateRealisticCandles("NATURALGAS", "15m", 50, livePrice));
               } else if (item.symbol === "CRUDEOIL") {
-                assetCandles.push(...generateRealisticCandles("CRUDEOIL", "15m", 50, 8585.00));
+                assetCandles.push(...generateRealisticCandles("CRUDEOIL", "15m", 50, livePrice));
               } else {
                 for (let i = 0; i < times.length; i++) {
                   const o = quotes.open?.[i];

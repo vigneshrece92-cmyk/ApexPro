@@ -61,7 +61,7 @@ export const InternalDemoTradingPanel: React.FC<InternalDemoTradingPanelProps> =
   const optSpec = getOptionSpec(activeSymbol);
   const multiplier = optSpec.lotSize || 65;
 
-  const currentPriceForSym = liveQuote?.bid || (activeSymbol === "NATURALGAS" ? 289.30 : activeSymbol === "CRUDEOIL" ? 8585.0 : 23320.0);
+  const currentPriceForSym = liveQuote?.bid || (activeSymbol === "NATURALGAS" ? 313.10 : activeSymbol === "CRUDEOIL" ? 9181.0 : 23320.0);
   const defaultDist = activeSymbol === "NATURALGAS" ? 2.5 : activeSymbol === "CRUDEOIL" ? 25.0 : activeSymbol === "BANKNIFTY" ? 70.0 : 35.0;
 
   const [stopLoss, setStopLoss] = useState<number>(() => round2(currentPriceForSym - defaultDist));

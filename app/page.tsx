@@ -54,7 +54,7 @@ export default function TerminalDashboard() {
   // Active State - Default to 15m Indian Options & Commodities Terminal
   const [activeSymbol, setActiveSymbol] = useState<AssetSymbol>("CRUDEOIL");
   const [timeframe, setTimeframe] = useState<TimeFrame>("15m");
-  const [candles, setCandles] = useState<Candle[]>(() => generateRealisticCandles("CRUDEOIL", "15m", 120, 8585.00));
+  const [candles, setCandles] = useState<Candle[]>(() => generateRealisticCandles("CRUDEOIL", "15m", 120, 9181.00));
   const [quote, setQuote] = useState<Quote>(INITIAL_QUOTES.CRUDEOIL);
   const [allQuotes, setAllQuotes] = useState<Record<AssetSymbol, Quote>>(INITIAL_QUOTES);
 
@@ -62,7 +62,7 @@ export default function TerminalDashboard() {
   const [alerts, setAlerts] = useState<InstitutionalAlert[]>(() => getInitialInstitutionalAlerts());
   const [isAlertsHubOpen, setIsAlertsHubOpen] = useState(false);
 
-  // Internal Institutional Demo Broker State (₹1,00,000 Balance - 100% Vercel Ready)
+  // Internal Institutional Demo Broker State (₹10,00,000 Balance - 100% Vercel Ready)
   const [demoAccount, setDemoAccount] = useState<DemoAccountState>(INITIAL_ACCOUNT_STATE);
   const notifiedTicketsRef = useRef<Set<number>>(new Set());
   const notifiedClosedTicketsRef = useRef<Set<number>>(new Set());

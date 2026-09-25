@@ -201,8 +201,8 @@ export function clearDemoLogs(state: DemoAccountState): DemoAccountState {
  * Load demo account state from browser localStorage or default
  */
 function getDefaultPrice(sym?: string): number {
-  if (sym === "NATURALGAS") return 289.30;
-  if (sym === "CRUDEOIL") return 8585.00;
+  if (sym === "NATURALGAS") return 313.10;
+  if (sym === "CRUDEOIL") return 9181.00;
   if (sym === "BANKNIFTY") return 50150.00;
   if (sym === "SENSEX") return 76850.00;
   if (sym === "FINNIFTY") return 23450.00;

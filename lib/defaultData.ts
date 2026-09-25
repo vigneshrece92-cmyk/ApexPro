@@ -50,12 +50,12 @@ export const INITIAL_QUOTES: Record<AssetSymbol, Quote> = {
     symbol: "CRUDEOIL",
     name: "CRUDE OIL (MCX Futures)",
     category: "MCX Commodity",
-    bid: 8585.00,
-    ask: 8587.00,
+    bid: 9181.00,
+    ask: 9183.00,
     spread: 2.0,
-    change24h: -1.30,
-    high24h: 8800.00,
-    low24h: 8529.00,
+    change24h: -2.23,
+    high24h: 9280.00,
+    low24h: 9120.00,
     pipPrecision: 2,
     pipMultiplier: 1,
     lotSize: 100,
@@ -67,12 +67,12 @@ export const INITIAL_QUOTES: Record<AssetSymbol, Quote> = {
     symbol: "NATURALGAS",
     name: "NATURAL GAS (MCX Futures)",
     category: "MCX Commodity",
-    bid: 289.30,
-    ask: 289.50,
+    bid: 313.10,
+    ask: 313.30,
     spread: 0.2,
-    change24h: 2.41,
-    high24h: 294.50,
-    low24h: 282.10,
+    change24h: 1.45,
+    high24h: 318.50,
+    low24h: 308.20,
     pipPrecision: 2,
     pipMultiplier: 100,
     lotSize: 1250,
@@ -806,12 +806,12 @@ export const DEFAULT_MTF_DATA: MTFAssetRow[] = [
   {
     symbol: "CRUDEOIL",
     name: "CRUDE OIL (MCX Futures)",
-    price: 8585.0,
+    price: 9181.0,
     structures: {
-      "15m": { bias: "bearish", detail: "VAH (₹8,735) Rejection -> Rotation to VAL (8,590)", isBOS: true },
-      "1h": { bias: "bearish", detail: "Failed at 8,800 High -> Trading Below POC (8,665)", isBOS: false },
+      "15m": { bias: "bearish", detail: "VAH (₹9,340) Rejection -> Rotation to VAL (9,180)", isBOS: true },
+      "1h": { bias: "bearish", detail: "Failed at 9,400 High -> Trading Below POC (9,260)", isBOS: false },
       "4h": { bias: "bearish", detail: "Re-entered 68% Value Area Toward VAL Support", isBOS: true },
-      "1d": { bias: "bearish", detail: "Session Reversal (-1.30%) Off Weekly Resistance", isBOS: true },
+      "1d": { bias: "bearish", detail: "Session Reversal (-2.23%) Off Weekly Resistance", isBOS: true },
     },
     overallBias: "STRONG SELL",
     confluenceScore: 94,
@@ -819,12 +819,12 @@ export const DEFAULT_MTF_DATA: MTFAssetRow[] = [
   {
     symbol: "NATURALGAS",
     name: "NATURAL GAS (MCX Futures)",
-    price: 271.6,
+    price: 313.10,
     structures: {
-      "15m": { bias: "bullish", detail: "VAL (267.5) Sweep & Bullish Rebound", isBOS: true },
-      "1h": { bias: "bullish", detail: "Expanding Above POC ₹271.6", isBOS: false },
+      "15m": { bias: "bullish", detail: "VAL (308.5) Sweep & Bullish Rebound", isBOS: true },
+      "1h": { bias: "bullish", detail: "Expanding Above POC ₹313.10", isBOS: false },
       "4h": { bias: "bullish", detail: "Bullish Expansion off Structural Low", isBOS: true },
-      "1d": { bias: "bullish", detail: "Strong Inflow (+4.08%) / Supply Deficit", isBOS: true },
+      "1d": { bias: "bullish", detail: "Strong Inflow (+1.45%) / Supply Deficit", isBOS: true },
     },
     overallBias: "STRONG BUY",
     confluenceScore: 94,
@@ -990,7 +990,7 @@ function getTimeframeVol(symbol: AssetSymbol, timeframe: string): number {
 export function generateCrudeOilSessionCandles(
   timeframe: string,
   count = 60,
-  currentBid = 8585.0,
+  currentBid = 9181.0,
   precision = 2
 ): Candle[] {
   let stepSec = 900; // 15m default
@@ -1012,13 +1012,14 @@ export function generateCrudeOilSessionCandles(
   const highIdx = Math.max(anchorIdx + 18, count - 6);
   const rejectIdx = highIdx + 2;
 
-  const anchorLow = 8529.0;
-  const val = 8590.0;
-  const poc = 8665.0;
-  const vah = 8735.0;
-  const sessionHigh = 8800.0;
+  const ratio = currentBid / 8585.0;
+  const anchorLow = +(8529.0 * ratio).toFixed(precision);
+  const val = +(8590.0 * ratio).toFixed(precision);
+  const poc = +(8665.0 * ratio).toFixed(precision);
+  const vah = +(8735.0 * ratio).toFixed(precision);
+  const sessionHigh = +(8800.0 * ratio).toFixed(precision);
 
-  let prevClose = 8780.0;
+  let prevClose = +(8780.0 * ratio).toFixed(precision);
 
   for (let i = 0; i < count; i++) {
     const time = startTime + i * stepSec;
