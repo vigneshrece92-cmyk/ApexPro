@@ -61,20 +61,20 @@ export function getUpcomingOptionExpiry(symbol: AssetSymbol | string): string {
 
   if (symbol === "CRUDEOIL") {
     const expDate = new Date(istDate);
-    if (istDate.getDate() > 19) {
+    if (istDate.getDate() >= 19) {
       expDate.setMonth(expDate.getMonth() + 1);
     }
     expDate.setDate(19);
-    return `19-${MONTH_NAMES[expDate.getMonth()]}`;
+    return `19-${MONTH_NAMES[expDate.getMonth() % 12]}`;
   }
 
   if (symbol === "NATURALGAS") {
     const expDate = new Date(istDate);
-    if (istDate.getDate() > 26) {
+    if (istDate.getDate() >= 26) {
       expDate.setMonth(expDate.getMonth() + 1);
     }
     expDate.setDate(26);
-    return `26-${MONTH_NAMES[expDate.getMonth()]}`;
+    return `26-${MONTH_NAMES[expDate.getMonth() % 12]}`;
   }
 
   const isStock = !(
@@ -88,12 +88,12 @@ export function getUpcomingOptionExpiry(symbol: AssetSymbol | string): string {
   if (isStock) {
     const year = istDate.getFullYear();
     let month = istDate.getMonth();
-    
+
     // Find last Thursday of current month
     const findLastThursday = (y: number, m: number) => {
       const lastDay = new Date(y, m + 1, 0); // last day of month
       const dow = lastDay.getDay();
-      const diff = (dow >= 4 ? dow - 4 : dow + 3);
+      const diff = dow >= 4 ? dow - 4 : dow + 3;
       return new Date(y, m, lastDay.getDate() - diff);
     };
 
@@ -109,7 +109,7 @@ export function getUpcomingOptionExpiry(symbol: AssetSymbol | string): string {
     return `${dd}-${mmm}`;
   }
 
-  // NSE Indices:
+  // NSE Indices Weekly Cycles:
   // NIFTY: Thursday (4)
   // BANKNIFTY: Wednesday (3)
   // FINNIFTY: Tuesday (2)
@@ -128,8 +128,32 @@ export function getUpcomingOptionExpiry(symbol: AssetSymbol | string): string {
   expDate.setDate(istDate.getDate() + daysAhead);
 
   const dd = String(expDate.getDate()).padStart(2, "0");
-  const mmm = MONTH_NAMES[expDate.getMonth()];
+  const mmm = MONTH_NAMES[expDate.getMonth() % 12];
   return `${dd}-${mmm}`;
+}
+
+/**
+ * Calculates authentic remaining days to upcoming contract expiry
+ */
+export function getDaysToExpiry(symbol: AssetSymbol | string): number {
+  try {
+    const expStr = getUpcomingOptionExpiry(symbol); // e.g. "29-OCT"
+    const [dayStr, monthStr] = expStr.split("-");
+    const day = parseInt(dayStr, 10);
+    const monthIdx = MONTH_NAMES.indexOf(monthStr);
+
+    const now = new Date();
+    const istDate = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
+    let expYear = istDate.getFullYear();
+    if (monthIdx < istDate.getMonth()) {
+      expYear += 1;
+    }
+    const expDate = new Date(expYear, monthIdx, day, 15, 30, 0);
+    const diffMs = expDate.getTime() - istDate.getTime();
+    return Math.max(0.5, +(diffMs / (24 * 3600 * 1000)).toFixed(1));
+  } catch {
+    return 3.5;
+  }
 }
 
 export function getOptionSpec(symbol: AssetSymbol | string): SymbolOptionSpec {
@@ -214,12 +238,14 @@ export function generateOptionChain(
   const chain: OptionChainItem[] = [];
 
   const halfStrikes = 7;
+  const daysToExpiry = getDaysToExpiry(symbol);
+
   for (let i = -halfStrikes; i <= halfStrikes; i++) {
     const strike = +(atmStrike + i * spec.strikeStep).toFixed(2);
     const isATM = strike === atmStrike;
 
-    const callCalc = estimateOptionPremium(spotPrice, strike, "CE", symbol);
-    const putCalc = estimateOptionPremium(spotPrice, strike, "PE", symbol);
+    const callCalc = estimateOptionPremium(spotPrice, strike, "CE", symbol, daysToExpiry);
+    const putCalc = estimateOptionPremium(spotPrice, strike, "PE", symbol, daysToExpiry);
 
     // Realistic Open Interest model:
     // Call OI peaks at round strikes above spot (resistance)
@@ -289,13 +315,15 @@ export function generateOptionChain(
 
 export function getRecommendedOptionContract(
   symbol: AssetSymbol | string,
-  action: "BUY CE" | "BUY PE",
+  action: "BUY CE" | "BUY PE" | "BUY" | "SELL" | string,
   spotPrice: number
 ): OptionContract {
   const spec = getOptionSpec(symbol);
   const atmStrike = calculateATMStrike(spotPrice, spec.strikeStep);
-  const type: OptionType = action === "BUY CE" ? "CE" : "PE";
-  const est = estimateOptionPremium(spotPrice, atmStrike, type, symbol);
+  const upper = (action || "BUY CE").toUpperCase();
+  const type: OptionType = upper.includes("PE") || upper.includes("PUT") || upper === "SELL" ? "PE" : "CE";
+  const daysToExpiry = getDaysToExpiry(symbol);
+  const est = estimateOptionPremium(spotPrice, atmStrike, type, symbol, daysToExpiry);
   const expiry = getUpcomingOptionExpiry(symbol);
 
   return {
