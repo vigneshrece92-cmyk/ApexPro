@@ -1,4 +1,4 @@
-﻿import { DemoPosition, ClosedTrade, INITIAL_DEMO_BALANCE } from "./demoTradingEngine";
+import { DemoPosition, ClosedTrade, INITIAL_DEMO_BALANCE } from "./demoTradingEngine";
 import { OptionContract } from "./types";
 
 let serverPositions: DemoPosition[] = [];
@@ -29,8 +29,8 @@ export function recordServerDemoPosition(
     symbol: contract.symbol,
     type: "BUY",
     volume: 1, // Standard 1 Lot
-    price_open: contract.premiumAsk,
-    price_current: contract.premiumAsk,
+    price_open: contract.spotPrice,
+    price_current: contract.spotPrice,
     sl: slPrice,
     tp: tpPrice,
     profit: 0,
@@ -40,6 +40,7 @@ export function recordServerDemoPosition(
     optionType: contract.type,
     optionStrike: contract.strike,
     optionEntryPremium: contract.premiumAsk,
+    optionCurrentPremium: contract.premiumAsk,
     lotSizeMultiplier: contract.lotSize,
     currency: "₹",
   };

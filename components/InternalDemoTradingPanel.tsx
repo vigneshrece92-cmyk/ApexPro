@@ -972,7 +972,12 @@ export const InternalDemoTradingPanel: React.FC<InternalDemoTradingPanelProps> =
                                 )}
                               </td>
                               <td className="px-3 py-2 text-gray-200">
-                                {cSym}{fmt2(pos.price_current)}
+                                <div>{cSym}{fmt2(pos.price_current)}</div>
+                                {pos.optionCurrentPremium ? (
+                                  <div className="text-[9px] text-cyan-300 font-bold">Prem: {cSym}{fmt2(pos.optionCurrentPremium)}</div>
+                                ) : pos.optionEntryPremium ? (
+                                  <div className="text-[9px] text-cyan-300 font-bold">Prem: {cSym}{fmt2(pos.optionEntryPremium)}</div>
+                                ) : null}
                               </td>
                               <td className="px-3 py-2 text-terminal-muted text-[11px]">
                                 <span>SL: {cSym}{fmt2(pos.sl)}</span>

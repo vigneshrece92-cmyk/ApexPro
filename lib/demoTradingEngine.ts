@@ -20,6 +20,7 @@ export interface DemoPosition {
   optionType?: OptionType;
   optionStrike?: number;
   optionEntryPremium?: number;
+  optionCurrentPremium?: number;
   lotSizeMultiplier?: number;
   currency?: "₹" | "$";
 }
@@ -561,10 +562,20 @@ export function closeDemoPosition(
   }
 
   const pos = state.open_positions[posIndex];
-  const closePrice = pos.type === "BUY" ? quote.bid : quote.ask;
+  const isOption = !!(pos.optionType && pos.optionEntryPremium != null);
+  const isPE = pos.optionType === "PE";
+  const delta = 0.50;
+  const spotChange = isPE ? (pos.price_open - quote.ask) : (quote.bid - pos.price_open);
+  const currentPremium = isOption
+    ? +Math.max(0.5, pos.optionEntryPremium! + spotChange * delta).toFixed(2)
+    : (pos.type === "BUY" ? quote.bid : quote.ask);
+
+  const closePrice = isOption ? currentPremium : (pos.type === "BUY" ? quote.bid : quote.ask);
   const profit = calculatePositionProfit(pos, quote);
   const contract = getContractSize(pos.symbol, pos);
-  const baseCost = pos.optionEntryPremium ? (pos.optionEntryPremium * pos.volume * contract) : (pos.volume * contract * pos.price_open);
+  const baseCost = isOption
+    ? pos.optionEntryPremium! * pos.volume * contract
+    : pos.volume * contract * pos.price_open;
   const returnPercent = Math.round((profit / Math.max(1, baseCost)) * 10000) / 100;
 
   const closedRecord: ClosedTrade = {
@@ -572,7 +583,7 @@ export function closeDemoPosition(
     symbol: pos.symbol,
     type: pos.type,
     volume: pos.volume,
-    price_open: pos.price_open,
+    price_open: isOption ? pos.optionEntryPremium! : pos.price_open,
     price_close: closePrice,
     sl: pos.sl,
     tp: pos.tp,
@@ -730,10 +741,27 @@ export function tickDemoPositions(
     const profit = calculatePositionProfit(pos, quote);
     const isPE = pos.optionType === "PE";
     const isCE = pos.optionType === "CE";
+    const isOption = !!(pos.optionType && pos.optionEntryPremium != null);
+
+    // Live option premium calculation via ATM delta
+    const delta = 0.50;
+    const spotChange = isPE ? (pos.price_open - quote.ask) : (quote.bid - pos.price_open);
+    const currentPremium = isOption
+      ? +Math.max(0.5, pos.optionEntryPremium! + spotChange * delta).toFixed(2)
+      : currentPrice;
+
+    // Check whether TP and SL were specified in Option Premium terms (e.g. SL ₹109.80, TP ₹211.70)
+    // vs Spot price terms (e.g. SL ₹23,050, TP ₹23,250)
+    const isPremiumSLTP = isOption && pos.tp > 0 && pos.tp < pos.price_open * 0.5;
 
     // 1. Check Take Profit Hit
     let tpHit = false;
-    if (isPE) {
+    if (isPremiumSLTP) {
+      // Option Premium target hit
+      if (pos.tp > 0 && currentPremium >= pos.tp) {
+        tpHit = true;
+      }
+    } else if (isPE) {
       // Put Option: Spot dropping below target triggers TP
       if (pos.tp > 0 && currentPrice <= pos.tp) {
         tpHit = true;
@@ -757,7 +785,12 @@ export function tickDemoPositions(
 
     // 2. Check Stop Loss Hit
     let slHit = false;
-    if (isPE) {
+    if (isPremiumSLTP) {
+      // Option Premium stop loss hit
+      if (pos.sl > 0 && currentPremium <= pos.sl) {
+        slHit = true;
+      }
+    } else if (isPE) {
       // Put Option: Spot rising above SL triggers Stop Loss
       if (pos.sl > 0) {
         if (pos.be_triggered ? currentPrice >= pos.sl : (pos.sl > pos.price_open && currentPrice >= pos.sl)) {
@@ -789,12 +822,19 @@ export function tickDemoPositions(
     }
 
     // 3. Auto Break-Even Check: If in profit by >= +₹500.00 and BE not yet triggered
-    let updatedPos = { ...pos, price_current: currentPrice, profit };
+    let updatedPos: DemoPosition = {
+      ...pos,
+      price_current: currentPrice,
+      optionCurrentPremium: currentPremium,
+      profit,
+    };
     const curSym = pos.currency || stateCopy.currency || "₹";
     const beProfitThreshold = pos.currency === "$" ? 15.0 : 500.0;
     if (!pos.be_triggered && profit >= beProfitThreshold) {
-      const buffer = pos.currency === "$" ? 0.2 : 0.5;
-      const newSL = isPE ? pos.price_open - buffer : pos.price_open + buffer;
+      const buffer = isPremiumSLTP ? 0.5 : (pos.currency === "$" ? 0.2 : 0.5);
+      const newSL = isPremiumSLTP
+        ? pos.optionEntryPremium! + buffer
+        : (isPE ? pos.price_open - buffer : pos.price_open + buffer);
       updatedPos.sl = Math.round(newSL * 100) / 100;
       updatedPos.be_triggered = true;
 
