@@ -266,11 +266,22 @@ export async function GET(req: NextRequest) {
       }
     });
 
+    const verbose = req.nextUrl?.searchParams?.get("verbose") === "true";
+
+    if (verbose) {
+      return NextResponse.json({
+        success: true,
+        timestamp: new Date().toISOString(),
+        triggeredCount,
+        results,
+      });
+    }
+
+    // Default ultra-compact response (< 80 bytes) optimized for cron-job.org payload limits
     return NextResponse.json({
-      success: true,
-      timestamp: new Date().toISOString(),
-      triggeredCount,
-      results,
+      ok: true,
+      scanned: results.length,
+      triggered: triggeredCount,
     });
   } catch (error) {
     return NextResponse.json(
