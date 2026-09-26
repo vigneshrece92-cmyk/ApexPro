@@ -97,7 +97,7 @@ async function scanAsset(
     const res = await fetch(url, {
       headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" },
       next: { revalidate: 0 },
-      signal: AbortSignal.timeout(6000),
+      signal: AbortSignal.timeout(3000),
     });
 
     if (!res.ok) {
@@ -246,14 +246,14 @@ export async function GET(req: NextRequest) {
     const usdInrRate = 95.945;
     const results: { symbol: AssetSymbol; triggered: boolean; message?: string }[] = [];
 
-    // Scan all monitored assets in concurrent batches of 6
-    const BATCH_SIZE = 6;
-    for (let i = 0; i < MONITORED_ASSETS.length; i += BATCH_SIZE) {
-      const batch = MONITORED_ASSETS.slice(i, i + BATCH_SIZE);
-      const batchResults = await Promise.all(
-        batch.map((item) => scanAsset(item, usdInrRate))
-      );
-      results.push(...batchResults);
+    // Scan all monitored assets concurrently in ~500ms
+    const settled = await Promise.allSettled(
+      MONITORED_ASSETS.map((item) => scanAsset(item, usdInrRate))
+    );
+    for (const r of settled) {
+      if (r.status === "fulfilled" && r.value) {
+        results.push(r.value);
+      }
     }
 
     const triggeredCount = results.filter((r) => r.triggered).length;
