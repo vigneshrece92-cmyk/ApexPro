@@ -25,12 +25,17 @@ const lastSymbolAlertTime = new Map<string, number>();
 const SYMBOL_COOLDOWN_MS = 20 * 60 * 1000; // 20 minutes cooldown per symbol to prevent repeated alerts
 
 const MONITORED_ASSETS: { symbol: AssetSymbol; ySym: string; multiplier?: number }[] = [
+  // Primary Indices
   { symbol: "NIFTY", ySym: "^NSEI" },
   { symbol: "BANKNIFTY", ySym: "^NSEBANK" },
   { symbol: "FINNIFTY", ySym: "NIFTY_FIN_SERVICE.NS" },
   { symbol: "SENSEX", ySym: "^BSESN" },
+
+  // MCX Commodities
   { symbol: "CRUDEOIL", ySym: "CL=F" },
   { symbol: "NATURALGAS", ySym: "NG=F" },
+
+  // Top 30 High-Volume Volatile NSE F&O Stocks
   { symbol: "RELIANCE", ySym: "RELIANCE.NS" },
   { symbol: "HDFCBANK", ySym: "HDFCBANK.NS" },
   { symbol: "ICICIBANK", ySym: "ICICIBANK.NS" },
@@ -40,7 +45,27 @@ const MONITORED_ASSETS: { symbol: AssetSymbol; ySym: string; multiplier?: number
   { symbol: "INFY", ySym: "INFY.NS" },
   { symbol: "TCS", ySym: "TCS.NS" },
   { symbol: "BAJFINANCE", ySym: "BAJFINANCE.NS" },
+  { symbol: "MARUTI", ySym: "MARUTI.NS" },
+  { symbol: "LT", ySym: "LT.NS" },
   { symbol: "AXISBANK", ySym: "AXISBANK.NS" },
+  { symbol: "KOTAKBANK", ySym: "KOTAKBANK.NS" },
+  { symbol: "BHARTIARTL", ySym: "BHARTIARTL.NS" },
+  { symbol: "ADANIENT", ySym: "ADANIENT.NS" },
+  { symbol: "ADANIPORTS", ySym: "ADANIPORTS.NS" },
+  { symbol: "HINDUNILVR", ySym: "HINDUNILVR.NS" },
+  { symbol: "ITC", ySym: "ITC.NS" },
+  { symbol: "SUNPHARMA", ySym: "SUNPHARMA.NS" },
+  { symbol: "TITAN", ySym: "TITAN.NS" },
+  { symbol: "JSWSTEEL", ySym: "JSWSTEEL.NS" },
+  { symbol: "COALINDIA", ySym: "COALINDIA.NS" },
+  { symbol: "NTPC", ySym: "NTPC.NS" },
+  { symbol: "POWERGRID", ySym: "POWERGRID.NS" },
+  { symbol: "BPCL", ySym: "BPCL.NS" },
+  { symbol: "ONGC", ySym: "ONGC.NS" },
+  { symbol: "VEDL", ySym: "VEDL.NS" },
+  { symbol: "BHEL", ySym: "BHEL.NS" },
+  { symbol: "DLF", ySym: "DLF.NS" },
+  { symbol: "BEL", ySym: "BEL.NS" },
 ];
 
 async function scanAsset(
@@ -215,10 +240,14 @@ export async function GET(req: NextRequest) {
     const usdInrRate = 95.945;
     const results: { symbol: AssetSymbol; triggered: boolean; message?: string }[] = [];
 
-    // Scan all monitored assets in controlled batches
-    for (const item of MONITORED_ASSETS) {
-      const res = await scanAsset(item, usdInrRate);
-      results.push(res);
+    // Scan all monitored assets in concurrent batches of 6
+    const BATCH_SIZE = 6;
+    for (let i = 0; i < MONITORED_ASSETS.length; i += BATCH_SIZE) {
+      const batch = MONITORED_ASSETS.slice(i, i + BATCH_SIZE);
+      const batchResults = await Promise.all(
+        batch.map((item) => scanAsset(item, usdInrRate))
+      );
+      results.push(...batchResults);
     }
 
     const triggeredCount = results.filter((r) => r.triggered).length;
