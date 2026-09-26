@@ -41,7 +41,7 @@ const MONITORED_ASSETS: { symbol: AssetSymbol; ySym: string; multiplier?: number
   { symbol: "HDFCBANK", ySym: "HDFCBANK.NS" },
   { symbol: "ICICIBANK", ySym: "ICICIBANK.NS" },
   { symbol: "SBIN", ySym: "SBIN.NS" },
-  { symbol: "TATAMOTORS", ySym: "TATAMOTORS.NS" },
+  { symbol: "TATAMOTORS", ySym: "TMPV.NS" },
   { symbol: "TATASTEEL", ySym: "TATASTEEL.NS" },
   { symbol: "INFY", ySym: "INFY.NS" },
   { symbol: "TCS", ySym: "TCS.NS" },

@@ -35,7 +35,7 @@ export async function GET(req: NextRequest) {
     HDFCBANK: "HDFCBANK.NS",
     ICICIBANK: "ICICIBANK.NS",
     SBIN: "SBIN.NS",
-    TATAMOTORS: "TATAMOTORS.NS",
+    TATAMOTORS: "TMPV.NS",
     TATASTEEL: "TATASTEEL.NS",
     INFY: "INFY.NS",
     TCS: "TCS.NS",
