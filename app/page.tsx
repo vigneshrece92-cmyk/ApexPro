@@ -61,7 +61,7 @@ export default function TerminalDashboard() {
   // Active State - Default to 15m Indian Options & Commodities Terminal (NIFTY 50)
   const [activeSymbol, setActiveSymbol] = useState<AssetSymbol>("NIFTY");
   const [timeframe, setTimeframe] = useState<TimeFrame>("15m");
-  const [candles, setCandles] = useState<Candle[]>(() => generateRealisticCandles("NIFTY", "15m", 120, 23329.00));
+  const [candles, setCandles] = useState<Candle[]>(() => generateRealisticCandles("NIFTY", "15m", 120, 23140.50));
   const [quote, setQuote] = useState<Quote>(INITIAL_QUOTES.NIFTY);
   const [allQuotes, setAllQuotes] = useState<Record<AssetSymbol, Quote>>(INITIAL_QUOTES);
 
