@@ -251,16 +251,23 @@ async function scanAsset(
       };
     }
 
-    // Immediately execute 1-Lot Demo trade on server with exact strike, lot size and expiry
-    const sl = targetSignal.sl || +(optContract.premiumAsk * 0.70).toFixed(2);
-    const tp = targetSignal.tp1 || +(optContract.premiumAsk * 1.35).toFixed(2);
-    recordServerDemoPosition(optContract, sl, tp, `PAVP ${targetSignal.action}`);
+    // Compute exact ATM Option Premium risk/reward metrics
+    const entryPremium = optContract.premiumAsk;
+    const optSL = Math.max(0.5, +(entryPremium * 0.70).toFixed(2));  // -30% Option SL
+    const optTP1 = +(entryPremium * 1.35).toFixed(2);                // +35% Target 1
+    const optTP2 = +(entryPremium * 1.65).toFixed(2);                // +65% Target 2
+
+    // Immediately execute 1-Lot Demo trade on server with exact strike, lot size, expiry, and option SL/TP
+    recordServerDemoPosition(optContract, optSL, optTP1, `PAVP ${targetSignal.action}`);
 
     const alertMessage = formatShortEntryMessage({
       symbol: item.symbol,
       strike: optContract.strike,
       type: optContract.type,
-      entryPremium: optContract.premiumAsk,
+      entryPremium: entryPremium,
+      slPremium: optSL,
+      tp1Premium: optTP1,
+      tp2Premium: optTP2,
       lotSize: optSpec.lotSize,
       expiry: optContract.expiry,
       currency: curSym,
