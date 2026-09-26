@@ -257,6 +257,13 @@ async function scanAsset(
     const optTP1 = +(entryPremium * 1.35).toFixed(2);                // +35% Target 1
     const optTP2 = +(entryPremium * 1.65).toFixed(2);                // +65% Target 2
 
+    // PAVP Spot Technical Reference Levels
+    const isCE = targetSignal.action === "BUY CE";
+    const tp1Label = "POC";
+    const tp2Label = isCE ? "VAH" : "VAL";
+    const tp1Spot = targetSignal.tp1 || pavp.poc;
+    const tp2Spot = targetSignal.tp2 || (isCE ? pavp.vah : pavp.val);
+
     // Immediately execute 1-Lot Demo trade on server with exact strike, lot size, expiry, and option SL/TP
     recordServerDemoPosition(optContract, optSL, optTP1, `PAVP ${targetSignal.action}`);
 
@@ -268,6 +275,11 @@ async function scanAsset(
       slPremium: optSL,
       tp1Premium: optTP1,
       tp2Premium: optTP2,
+      tp1Label,
+      tp2Label,
+      tp1SpotPrice: tp1Spot,
+      tp2SpotPrice: tp2Spot,
+      spotPrice: livePrice,
       lotSize: optSpec.lotSize,
       expiry: optContract.expiry,
       currency: curSym,

@@ -42,6 +42,11 @@ export interface ShortEntrySignalParams {
   slPremium?: number;
   tp1Premium?: number;
   tp2Premium?: number;
+  tp1Label?: string;
+  tp2Label?: string;
+  tp1SpotPrice?: number;
+  tp2SpotPrice?: number;
+  spotPrice?: number;
   lotSize: number;
   volumeLots?: number;
   expiry: string;
@@ -64,12 +69,19 @@ export function formatShortEntryMessage(params: ShortEntrySignalParams): string 
       ? "⏳ Pre-Market (Opens 09:15)"
       : "✅ Executed";
 
+  const tp1Label = params.tp1Label || "POC";
+  const tp2Label = params.tp2Label || (params.type === "CE" ? "VAH" : "VAL");
+
+  const tp1SpotText = params.tp1SpotPrice != null ? ` [Spot ~${params.tp1SpotPrice.toFixed(1)}]` : "";
+  const tp2SpotText = params.tp2SpotPrice != null ? ` [Spot ~${params.tp2SpotPrice.toFixed(1)}]` : "";
+
   return [
     `${emoji} <b>BUY ${params.symbol} ${params.strike} ${params.type}</b>`,
     "━━━━━━━━━━━━━━━",
     `• <b>Entry:</b> ${cur}${params.entryPremium.toFixed(2)}`,
     `• <b>SL:</b> ${cur}${sl.toFixed(2)}`,
-    `• <b>Target:</b> ${cur}${tp1.toFixed(2)} / ${cur}${tp2.toFixed(2)}`,
+    `• <b>Target 1 (${tp1Label}):</b> ${cur}${tp1.toFixed(2)}${tp1SpotText}`,
+    `• <b>Target 2 (${tp2Label}):</b> ${cur}${tp2.toFixed(2)}${tp2SpotText}`,
     `• <b>Lot:</b> ${lots} Lot (${params.lotSize * lots} Qty)`,
     `• <b>Expiry:</b> ${params.expiry}`,
     `• <b>Demo:</b> ${status}`,
