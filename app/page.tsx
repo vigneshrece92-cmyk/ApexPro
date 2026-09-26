@@ -176,57 +176,11 @@ export default function TerminalDashboard() {
     return () => clearInterval(interval);
   }, []);
 
-  // 1. Dispatch Telegram notifications cleanly and purely on position changes (NEVER inside state updater)
+  // 1. Silent demo position state persistence (NO Telegram broadcast when viewing charts)
   useEffect(() => {
     if (!isMounted) return;
-
-    // Check for newly opened positions
-    if (Array.isArray(demoAccount.open_positions)) {
-      for (const pos of demoAccount.open_positions) {
-        if (pos?.ticket && !notifiedTicketsRef.current.has(pos.ticket)) {
-          notifiedTicketsRef.current.add(pos.ticket);
-          const curSym = pos.currency || "₹";
-          const openPrice = typeof pos.price_open === "number" ? pos.price_open.toFixed(2) : "0.00";
-          const sl = typeof pos.sl === "number" ? pos.sl.toFixed(2) : "0.00";
-          const tp = typeof pos.tp === "number" ? pos.tp.toFixed(2) : "0.00";
-          const desc = pos.optionContractName || `${pos.symbol} ${pos.type}`;
-          const lots = pos.volume || 1;
-          const totalQty = pos.lotSizeMultiplier ? lots * pos.lotSizeMultiplier : lots;
-          const msg = [
-            `🤖 <b>AUTO-BOT: ${desc}</b>`,
-            "━━━━━━━━━━━━━━━",
-            `• <b>Entry:</b> ${curSym}${openPrice}`,
-            `• <b>SL:</b> ${curSym}${sl}`,
-            `• <b>Target:</b> ${curSym}${tp}`,
-            `• <b>Lot:</b> ${lots} Lot (${totalQty} Qty)`,
-            `• <b>Ticket:</b> #${pos.ticket}`,
-          ].join("\n");
-          sendTelegramNotification(msg).catch((err) => console.warn("Telegram broadcast error:", err));
-        }
-      }
-    }
-
-    // Check for newly closed positions
-    const historyList = Array.isArray(demoAccount.history) ? demoAccount.history : [];
-    for (const closed of historyList) {
-      if (closed?.ticket && !notifiedClosedTicketsRef.current.has(closed.ticket)) {
-        notifiedClosedTicketsRef.current.add(closed.ticket);
-        const curSym = closed.currency || "₹";
-        const profit = typeof closed.profit === "number" ? closed.profit : 0;
-        const closePrice = typeof closed.price_close === "number" ? closed.price_close : 0;
-        const exitMsg = formatShortExitMessage({
-          symbol: closed.symbol,
-          contractName: closed.optionContractName,
-          profit,
-          closePrice,
-          closeReason: closed.close_reason,
-          currency: curSym,
-          ticket: closed.ticket,
-        });
-        sendTelegramNotification(exitMsg).catch((err) => console.warn("Telegram broadcast error:", err));
-      }
-    }
-  }, [demoAccount.open_positions, demoAccount.history, isMounted]);
+    saveDemoAccount(demoAccount);
+  }, [demoAccount, isMounted]);
 
   // 2. Autonomous Market Signal Scanner Heartbeat (invokes server-side cron route)
   useEffect(() => {

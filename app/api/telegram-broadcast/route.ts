@@ -1,4 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
+import { isIndianMarketOpen } from "@/lib/demoTradingEngine";
+import { INITIAL_QUOTES } from "@/lib/defaultData";
+import { AssetSymbol } from "@/lib/types";
 
 // Ensure Node TLS allows Telegram API calls across environments and local proxies
 if (typeof process !== "undefined" && process.env) {
@@ -64,6 +67,61 @@ export async function POST(req: NextRequest) {
 
     if (!message || typeof message !== "string") {
       return NextResponse.json({ success: false, error: "No message provided" }, { status: 400 });
+    }
+
+    // A. Drop simulated pre-market alerts: signals must ONLY trigger during live market hours
+    if (message.includes("Pre-Market") || message.includes("pending_market_open")) {
+      console.warn("[Telegram Firewall] Pre-market alert dropped. Signals are only sent during live market hours.");
+      return NextResponse.json({
+        success: true,
+        throttled: true,
+        message: "Pre-market alert dropped. Signals are only broadcast during live market hours.",
+      });
+    }
+
+    // B. Drop client-side simulated Auto-Bot demo execution ticks
+    if (message.includes("AUTO-BOT")) {
+      console.warn("[Telegram Firewall] Local auto-bot demo trade alert dropped from public VIP channel.");
+      return NextResponse.json({
+        success: true,
+        throttled: true,
+        message: "Auto-bot internal demo trade dropped from public broadcast.",
+      });
+    }
+
+    const plain = message.replace(/<[^>]*>/g, "").replace(/\s+/g, " ").trim();
+    const upper = (plain.split("\n")[0] || plain).toUpperCase();
+
+    // C. Strict Market Hours & Strike Sanity Validation for Entry Signals
+    const entryMatch = upper.match(/(BUY|SELL)\s+([A-Z0-9_\-]+)\s+(\d+(?:\.\d+)?)\s+(CE|PE)/);
+    if (entryMatch && !isTest) {
+      const [, , sym, strike] = entryMatch;
+
+      // 1. Strict Market Hours Check: If market is closed, drop signal
+      const marketCheck = isIndianMarketOpen(sym);
+      if (!marketCheck.isOpen) {
+        console.warn(`[Telegram Firewall] Signal for ${sym} dropped: Market Closed (${marketCheck.statusText}).`);
+        return NextResponse.json({
+          success: true,
+          throttled: true,
+          message: `Signal dropped: Market is closed (${marketCheck.statusText}).`,
+        });
+      }
+
+      // 2. Strike Sanity Check vs Asset Reference Price (rejects crazy values like TATASTEEL 23141 or SENSEX 200)
+      const baseQuote = INITIAL_QUOTES[sym as AssetSymbol];
+      if (baseQuote && baseQuote.bid > 0) {
+        const numStrike = parseFloat(strike);
+        const ratio = Math.abs(numStrike - baseQuote.bid) / baseQuote.bid;
+        if (ratio > 0.35) {
+          console.warn(`[Telegram Firewall] Corrupted strike dropped: ${sym} ${strike} (expected ~${baseQuote.bid})`);
+          return NextResponse.json({
+            success: true,
+            throttled: true,
+            message: "Corrupted/out-of-range strike dropped.",
+          });
+        }
+      }
     }
 
     const now = Date.now();

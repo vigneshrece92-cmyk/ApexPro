@@ -870,18 +870,26 @@ export function evaluateAutoBot(
     return state;
   }
 
-  // Market hours & 3:00 PM cutoff enforcement for Indian stock market in STRICT_REAL mode
-  if (state.auto_bot.market_mode === "STRICT_REAL") {
-    const marketCheck = isIndianMarketOpen(quote.symbol);
-    if (!marketCheck.isOpen) {
-      return state;
-    }
+  // Strict Indian Market Hours enforcement: No autonomous trading outside live market hours
+  const marketCheck = isIndianMarketOpen(quote.symbol);
+  if (!marketCheck.isOpen) {
+    return state;
   }
 
   // Limit max concurrent open positions to 4 to allow active multi-asset options trading
   const openPositions = Array.isArray(state.open_positions) ? state.open_positions : [];
   if (openPositions.length >= 4) {
     return state;
+  }
+
+  // Safety sanity check: verify candles actually match quote price before running PAVP
+  if (candles && candles.length > 0) {
+    const lastBar = candles[candles.length - 1];
+    const priceDiffRatio = Math.abs(lastBar.close - quote.bid) / Math.max(1, quote.bid);
+    if (priceDiffRatio > 0.35) {
+      // Stale candles from previous symbol! Abort to prevent mismatched strikes
+      return state;
+    }
   }
 
   // 1. Check for Strict 15M Volume Profile (PAVP) Entry
