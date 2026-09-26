@@ -65,8 +65,8 @@ export default function TerminalDashboard() {
   const [quote, setQuote] = useState<Quote>(INITIAL_QUOTES.NIFTY);
   const [allQuotes, setAllQuotes] = useState<Record<AssetSymbol, Quote>>(INITIAL_QUOTES);
 
-  // Institutional Alerts State (4H Breakout & Retest + AMD Radar)
-  const [alerts, setAlerts] = useState<InstitutionalAlert[]>(() => getInitialInstitutionalAlerts());
+  // Institutional Alerts State (Real-time live detected alerts only)
+  const [alerts, setAlerts] = useState<InstitutionalAlert[]>([]);
   const [isAlertsHubOpen, setIsAlertsHubOpen] = useState(false);
 
   // Internal Institutional Demo Broker State (₹10,00,000 Balance - 100% Vercel Ready)
@@ -138,9 +138,13 @@ export default function TerminalDashboard() {
         const res = await fetch("/api/alerts");
         if (res.ok) {
           const data = await res.json();
-          if (data.alerts && data.alerts.length > 0) {
-            setAlerts(data.alerts);
-          }
+          const clearedAt = typeof window !== "undefined"
+            ? Number(localStorage.getItem("apex_alerts_cleared_at") || 0)
+            : 0;
+          const freshAlerts = Array.isArray(data.alerts)
+            ? data.alerts.filter((a: any) => (a.timestamp || 0) > clearedAt)
+            : [];
+          setAlerts(freshAlerts);
         }
       } catch (e) {
         console.warn("Failed to fetch alerts:", e);
@@ -430,6 +434,9 @@ export default function TerminalDashboard() {
 
   const handleClearAlerts = () => {
     setAlerts([]);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("apex_alerts_cleared_at", String(Date.now()));
+    }
     notifiedTicketsRef.current.clear();
     notifiedClosedTicketsRef.current.clear();
   };

@@ -129,25 +129,10 @@ export async function GET() {
 
             if (detectedAlert) {
               alertMap.set(`${item.symbol}-${item.pattern}`, detectedAlert);
-            } else {
-              alertMap.set(
-                `${item.symbol}-${item.pattern}`,
-                generateDynamicLiveAlert(item.symbol, item.name, assetCandles, itemQuote, item.pattern)
-              );
             }
-          } else {
-            alertMap.set(
-              `${item.symbol}-${item.pattern}`,
-              generateDynamicLiveAlert(item.symbol, item.name, [], defaultQuote, item.pattern)
-            );
           }
         } catch (err) {
           console.warn(`Error scanning live alerts for ${item.symbol}:`, err);
-          const defaultQuote = INITIAL_QUOTES[item.symbol];
-          alertMap.set(
-            `${item.symbol}-${item.pattern}`,
-            generateDynamicLiveAlert(item.symbol, item.name, [], defaultQuote, item.pattern)
-          );
         }
       })
     );
@@ -164,7 +149,7 @@ export async function GET() {
   } catch (error) {
     console.error("Alerts API Error:", error);
     return NextResponse.json(
-      { success: false, error: "Failed to generate alerts", alerts: getInitialInstitutionalAlerts() },
+      { success: false, error: "Failed to generate alerts", alerts: [] },
       { status: 500 }
     );
   }
