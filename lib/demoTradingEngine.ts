@@ -1023,15 +1023,17 @@ export function evaluateAutoBot(
     const isCE = latestSignal.action === "BUY CE";
     const tradeType = isCE ? "BUY" : "SELL";
 
-    // Validate signal freshness: must be on current or previous candle, and within 20 minutes
+    // Validate signal freshness: strictly require signal to be on the current/immediate previous candle AND within 20 minutes of live wall clock
+    const sigTimeMs = typeof latestSignal.time === "number"
+      ? (latestSignal.time < 1e11 ? latestSignal.time * 1000 : latestSignal.time)
+      : Date.now();
     const isFreshCandle = typeof latestSignal.candleIndex === "number"
-      ? (sessionCandles.length - 1 - latestSignal.candleIndex) <= 2
+      ? (sessionCandles.length - 1 - latestSignal.candleIndex) <= 1
       : true;
-    const isFreshTime = typeof latestSignal.time === "number"
-      ? (Date.now() - latestSignal.time <= 20 * 60 * 1000)
-      : true;
+    const isFreshTime = (Date.now() - sigTimeMs) <= 20 * 60 * 1000;
 
-    if (!isFreshCandle && !isFreshTime) {
+    // Both must be fresh to enter: ignore all past/older alerts
+    if (!isFreshCandle || !isFreshTime) {
       return state;
     }
 

@@ -7,9 +7,12 @@ import {
   getPAVPConfigForTimeframe,
 } from "@/lib/technicals";
 import { getRecommendedOptionContract, getOptionSpec } from "@/lib/optionsEngine";
+import fs from "fs";
+import path from "path";
+import os from "os";
 import { formatShortEntryMessage } from "@/lib/telegramBroadcaster";
 import { isIndianMarketOpen } from "@/lib/demoTradingEngine";
-import { recordServerDemoPosition } from "@/lib/serverDemoStore";
+import { recordServerDemoPosition, tickServerDemoPosition } from "@/lib/serverDemoStore";
 
 // Ensure Node TLS allows Yahoo Finance & Telegram fetch across environments
 if (typeof process !== "undefined" && process.env) {
@@ -20,10 +23,35 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 export const maxDuration = 60; // Allow up to 60s for Vercel Serverless
 
-// Server-side persistent deduplication cache: stores "SYMBOL_ACTION_CANDLETIME" -> timestamp
+// Server-side persistent deduplication cache
 const sentSignalTimestamps = new Map<string, number>();
 const lastSymbolAlertTime = new Map<string, number>();
 const SYMBOL_COOLDOWN_MS = 20 * 60 * 1000; // 20 minutes cooldown per symbol to prevent repeated alerts
+
+const DEDUP_CACHE_FILE = path.join(os.tmpdir(), "apex_sent_signals.json");
+
+function getDiskDedupCache(): Set<string> {
+  const set = new Set<string>();
+  try {
+    if (fs.existsSync(DEDUP_CACHE_FILE)) {
+      const raw = fs.readFileSync(DEDUP_CACHE_FILE, "utf-8");
+      const list = JSON.parse(raw);
+      if (Array.isArray(list)) {
+        list.forEach((k: string) => set.add(k));
+      }
+    }
+  } catch {}
+  return set;
+}
+
+function saveDiskDedup(key: string): void {
+  try {
+    const set = getDiskDedupCache();
+    set.add(key);
+    const arr = Array.from(set).slice(-200);
+    fs.writeFileSync(DEDUP_CACHE_FILE, JSON.stringify(arr), "utf-8");
+  } catch {}
+}
 
 const MONITORED_ASSETS: { symbol: AssetSymbol; ySym: string; multiplier?: number }[] = [
   // Primary Indices
@@ -114,6 +142,9 @@ async function scanAsset(
     const factor = isCrude ? usdInrRate * 1.0215 : isNatGas ? usdInrRate : 1.0;
     const livePrice = regularPrice != null ? +(regularPrice * factor).toFixed(precision) : baseQuote.bid;
 
+    // Update open demo positions for this symbol with live price
+    tickServerDemoPosition(item.symbol, livePrice);
+
     const times = res0.timestamp || [];
     const quotes = res0.indicators?.quote?.[0] || {};
     const candles: Candle[] = [];
@@ -169,30 +200,56 @@ async function scanAsset(
 
     // Only look at the latest completed candle (the last 2 bars: latest or immediate previous bar)
     const latestBarIdx = candles.length - 1;
-    const targetSignal = signals.find((s) => {
+    const recentSignals = signals.filter((s) => {
       if (typeof s.candleIndex === "number") {
         return latestBarIdx - s.candleIndex <= 1; // Strictly on the latest 1-2 bars
       }
       return false;
     });
 
-    if (!targetSignal) {
+    if (recentSignals.length === 0) {
       return { symbol: item.symbol, triggered: false, message: "No fresh signals on current candle" };
     }
 
-    const candleTime = targetSignal.time || candles[targetSignal.candleIndex || latestBarIdx].time;
+    // Pick the most recent signal
+    const targetSignal = recentSignals[recentSignals.length - 1];
+
+    const candleTimeSec = targetSignal.time || candles[targetSignal.candleIndex || latestBarIdx].time;
+    const candleTimeMs = candleTimeSec < 1e11 ? candleTimeSec * 1000 : candleTimeSec;
+    const candleAgeMs = Date.now() - candleTimeMs;
+
+    // STRICT FRESHNESS FILTER ("leave the older alerts"):
+    // Only accept signals from candles formed within the last 18 minutes (1,080,000 ms) of live wall clock!
+    // Any signal from older candles (e.g. yesterday, earlier morning, past hours) is strictly ignored.
+    if (candleAgeMs > 18 * 60 * 1000) {
+      return {
+        symbol: item.symbol,
+        triggered: false,
+        message: `Ignored older signal (${Math.round(candleAgeMs / 60000)}m old - only new alerts allowed)`,
+      };
+    }
 
     // STRICT DEDUPLICATION KEY: tied to SYMBOL + ACTION + CANDLE_TIMESTAMP
     // Since a 15-minute candle timestamp is fixed, this key CAN NEVER FIRE TWICE FOR THE SAME CANDLE
-    const dedupKey = `${item.symbol}_${targetSignal.action}_${candleTime}`;
+    const dedupKey = `${item.symbol}_${targetSignal.action}_${candleTimeSec}`;
 
-    if (sentSignalTimestamps.has(dedupKey)) {
+    if (sentSignalTimestamps.has(dedupKey) || getDiskDedupCache().has(dedupKey)) {
       return { symbol: item.symbol, triggered: false, message: "Already notified for this candle" };
     }
 
     const optContract = getRecommendedOptionContract(item.symbol, targetSignal.action, livePrice);
     const optSpec = getOptionSpec(item.symbol);
     const curSym = baseQuote.currency || "₹";
+
+    // Strike sanity check (must be within 35% of underlying price)
+    const strikeDiff = Math.abs(optContract.strike - livePrice) / Math.max(1, livePrice);
+    if (strikeDiff > 0.35) {
+      return {
+        symbol: item.symbol,
+        triggered: false,
+        message: `Corrupted strike dropped: ${optContract.strike} (underlying: ${livePrice})`,
+      };
+    }
 
     // Immediately execute 1-Lot Demo trade on server with exact strike, lot size and expiry
     const sl = targetSignal.sl || +(optContract.premiumAsk * 0.70).toFixed(2);
@@ -226,6 +283,7 @@ async function scanAsset(
 
     if (tgRes.ok) {
       sentSignalTimestamps.set(dedupKey, Date.now());
+      saveDiskDedup(dedupKey);
       lastSymbolAlertTime.set(item.symbol, Date.now());
       return { symbol: item.symbol, triggered: true, message: `Alert sent: ${optContract.strike} ${optContract.type}` };
     } else {
