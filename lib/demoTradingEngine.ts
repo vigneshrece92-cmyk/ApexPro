@@ -912,9 +912,9 @@ export function evaluateAutoBot(
     return state;
   }
 
-  // Limit max concurrent open positions to 4 to allow active multi-asset options trading
+  // Support active multi-asset options trading across ₹10,00,000 portfolio (up to 30 concurrent positions)
   const openPositions = Array.isArray(state.open_positions) ? state.open_positions : [];
-  if (openPositions.length >= 4) {
+  if (openPositions.length >= 30) {
     return state;
   }
 

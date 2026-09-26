@@ -64,10 +64,38 @@ export function recordServerDemoPosition(
 ): DemoPosition {
   loadStore();
 
-  // 1. Prevent duplicate open positions for the same symbol
+  // 1. Prevent duplicate open positions in the same direction for the same symbol
   const existing = serverPositions.find((p) => p.symbol === contract.symbol);
   if (existing) {
-    return existing; // Leave existing open trade active, do not duplicate
+    // If same direction (e.g. CE when CE is open), maintain existing position
+    if (existing.optionType === contract.type) {
+      return existing;
+    }
+    // If reversal direction (e.g. PE triggered when CE is open), close existing trade at market
+    serverBalance += existing.profit;
+    const estClosePrem = existing.optionCurrentPremium || existing.optionEntryPremium!;
+    const retPct = existing.optionEntryPremium && existing.optionEntryPremium > 0
+      ? +(((estClosePrem - existing.optionEntryPremium) / existing.optionEntryPremium) * 100).toFixed(1)
+      : 0;
+
+    serverHistory.unshift({
+      ticket: existing.ticket,
+      symbol: existing.symbol,
+      type: existing.type,
+      volume: existing.volume,
+      price_open: existing.price_open,
+      price_close: contract.spotPrice,
+      sl: existing.sl,
+      tp: existing.tp,
+      profit: existing.profit,
+      return_percent: retPct,
+      open_time: existing.time,
+      close_time: Date.now(),
+      close_reason: "PAVP Reversal Exit",
+      optionContractName: existing.optionContractName,
+      currency: existing.currency,
+    });
+    serverPositions = serverPositions.filter((p) => p.ticket !== existing.ticket);
   }
 
   const ticket = Math.floor(1000000 + Math.random() * 9000000);
@@ -92,7 +120,8 @@ export function recordServerDemoPosition(
     currency: "₹",
   };
 
-  if (serverPositions.length >= 10) {
+  // Support up to 35 concurrent open positions for the ₹10 Lakhs multi-asset capital
+  if (serverPositions.length >= 35) {
     serverPositions.pop();
   }
   serverPositions.unshift(newPos);

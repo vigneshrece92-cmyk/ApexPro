@@ -191,21 +191,50 @@ export default function TerminalDashboard() {
         const res = await fetch("/api/demo-account");
         if (res.ok) {
           const data = await res.json();
-          if (Array.isArray(data.open_positions) && data.open_positions.length > 0) {
-            setDemoAccount((prev) => {
-              const existingTickets = new Set(prev.open_positions.map((p) => p.ticket));
-              const newPositions = data.open_positions.filter(
-                (p: any) => !existingTickets.has(p.ticket)
-              );
-              if (newPositions.length === 0) return prev;
-              const updated = {
-                ...prev,
-                open_positions: [...newPositions, ...prev.open_positions],
-              };
-              saveDemoAccount(updated);
-              return updated;
-            });
-          }
+          setDemoAccount((prev) => {
+            let changed = false;
+            let updatedOpen = prev.open_positions || [];
+            let updatedHist = prev.history || [];
+            let updatedBal = prev.balance;
+
+            // 1. Sync server open positions
+            if (Array.isArray(data.open_positions)) {
+              const existingTickets = new Set(updatedOpen.map((p) => p.ticket));
+              const serverNew = data.open_positions.filter((p: any) => !existingTickets.has(p.ticket));
+              if (serverNew.length > 0) {
+                updatedOpen = [...serverNew, ...updatedOpen];
+                changed = true;
+              }
+            }
+
+            // 2. Sync server closed trade history
+            if (Array.isArray(data.history) && data.history.length > 0) {
+              const existingHistTickets = new Set(updatedHist.map((h) => h.ticket));
+              const serverNewHist = data.history.filter((h: any) => !existingHistTickets.has(h.ticket));
+              if (serverNewHist.length > 0) {
+                updatedHist = [...serverNewHist, ...updatedHist];
+                const closedTickets = new Set(data.history.map((h: any) => h.ticket));
+                updatedOpen = updatedOpen.filter((p) => !closedTickets.has(p.ticket));
+                changed = true;
+              }
+            }
+
+            // 3. Sync balance
+            if (typeof data.balance === "number" && Math.abs(data.balance - prev.balance) > 1) {
+              updatedBal = data.balance;
+              changed = true;
+            }
+
+            if (!changed) return prev;
+            const updated = {
+              ...prev,
+              balance: updatedBal,
+              open_positions: updatedOpen,
+              history: updatedHist,
+            };
+            saveDemoAccount(updated);
+            return updated;
+          });
         }
       } catch {
         // silent
