@@ -9,6 +9,7 @@ import {
 import { getRecommendedOptionContract, getOptionSpec } from "@/lib/optionsEngine";
 import { formatShortEntryMessage } from "@/lib/telegramBroadcaster";
 import { isIndianMarketOpen } from "@/lib/demoTradingEngine";
+import { recordServerDemoPosition } from "@/lib/serverDemoStore";
 
 // Ensure Node TLS allows Yahoo Finance & Telegram fetch across environments
 if (typeof process !== "undefined" && process.env) {
@@ -192,6 +193,11 @@ async function scanAsset(
     const optContract = getRecommendedOptionContract(item.symbol, targetSignal.action, livePrice);
     const optSpec = getOptionSpec(item.symbol);
     const curSym = baseQuote.currency || "₹";
+
+    // Immediately execute 1-Lot Demo trade on server with exact strike, lot size and expiry
+    const sl = targetSignal.sl || +(optContract.premiumAsk * 0.70).toFixed(2);
+    const tp = targetSignal.tp1 || +(optContract.premiumAsk * 1.35).toFixed(2);
+    recordServerDemoPosition(optContract, sl, tp, `PAVP ${targetSignal.action}`);
 
     const alertMessage = formatShortEntryMessage({
       symbol: item.symbol,

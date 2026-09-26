@@ -176,11 +176,46 @@ export default function TerminalDashboard() {
     return () => clearInterval(interval);
   }, []);
 
-  // 1. Silent demo position state persistence (NO Telegram broadcast when viewing charts)
+  // 1. Silent demo position state persistence
   useEffect(() => {
     if (!isMounted) return;
     saveDemoAccount(demoAccount);
   }, [demoAccount, isMounted]);
+
+  // 1b. Sync with server-side autonomous signal executions
+  useEffect(() => {
+    if (!isMounted) return;
+
+    const syncServerTrades = async () => {
+      try {
+        const res = await fetch("/api/demo-account");
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data.open_positions) && data.open_positions.length > 0) {
+            setDemoAccount((prev) => {
+              const existingTickets = new Set(prev.open_positions.map((p) => p.ticket));
+              const newPositions = data.open_positions.filter(
+                (p: any) => !existingTickets.has(p.ticket)
+              );
+              if (newPositions.length === 0) return prev;
+              const updated = {
+                ...prev,
+                open_positions: [...newPositions, ...prev.open_positions],
+              };
+              saveDemoAccount(updated);
+              return updated;
+            });
+          }
+        }
+      } catch {
+        // silent
+      }
+    };
+
+    syncServerTrades();
+    const syncInterval = setInterval(syncServerTrades, 15000);
+    return () => clearInterval(syncInterval);
+  }, [isMounted]);
 
   // 2. Autonomous Market Signal Scanner Heartbeat (invokes server-side cron route)
   useEffect(() => {
