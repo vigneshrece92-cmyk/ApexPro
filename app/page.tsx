@@ -58,11 +58,11 @@ export default function TerminalDashboard() {
   // Client mount hydration guard
   const [isMounted, setIsMounted] = useState(false);
 
-  // Active State - Default to 15m Indian Options & Commodities Terminal
-  const [activeSymbol, setActiveSymbol] = useState<AssetSymbol>("CRUDEOIL");
+  // Active State - Default to 15m Indian Options & Commodities Terminal (NIFTY 50)
+  const [activeSymbol, setActiveSymbol] = useState<AssetSymbol>("NIFTY");
   const [timeframe, setTimeframe] = useState<TimeFrame>("15m");
-  const [candles, setCandles] = useState<Candle[]>(() => generateRealisticCandles("CRUDEOIL", "15m", 120, 9181.00));
-  const [quote, setQuote] = useState<Quote>(INITIAL_QUOTES.CRUDEOIL);
+  const [candles, setCandles] = useState<Candle[]>(() => generateRealisticCandles("NIFTY", "15m", 120, 23329.00));
+  const [quote, setQuote] = useState<Quote>(INITIAL_QUOTES.NIFTY);
   const [allQuotes, setAllQuotes] = useState<Record<AssetSymbol, Quote>>(INITIAL_QUOTES);
 
   // Institutional Alerts State (4H Breakout & Retest + AMD Radar)
@@ -228,135 +228,26 @@ export default function TerminalDashboard() {
     }
   }, [demoAccount.open_positions, demoAccount.history, isMounted]);
 
-  // 2. Active Chart PAVP Signal Detector & Instant Telegram Broadcaster
-  useEffect(() => {
-    if (!isMounted || !candles || candles.length < 15 || !quote) return;
-
-    try {
-      const precision = quote.pipPrecision || 2;
-      const pavpConf = getPAVPConfigForTimeframe(timeframe);
-      const pavp = calculatePivotAnchoredVolumeProfile(
-        candles,
-        pavpConf.pvtLength,
-        pavpConf.profileLevels,
-        pavpConf.valueAreaPct,
-        precision
-      );
-      if (!pavp || pavp.poc <= 0) return;
-
-      const { signals } = detectPAVPSignals(candles, pavp, activeSymbol, precision);
-      if (!signals || signals.length === 0) return;
-
-      // Scan signals on recent candles (within the last 5 candles)
-      for (const sig of signals) {
-        const isRecent = typeof sig.candleIndex === "number" ? sig.candleIndex >= candles.length - 5 : true;
-        if (!isRecent) continue;
-
-        const sigKey = `${activeSymbol}_${sig.action}_${sig.time || sig.candleIndex}_${sig.levelPrice}`;
-        if (notifiedSignalKeysRef.current.has(sigKey)) continue;
-
-        notifiedSignalKeysRef.current.add(sigKey);
-
-        const optContract = getRecommendedOptionContract(activeSymbol, sig.action, quote.bid);
-        const optSpec = getOptionSpec(activeSymbol);
-        const curSym = quote.currency || "₹";
-        const marketStatus = isIndianMarketOpen(activeSymbol);
-
-        const msg = formatShortEntryMessage({
-          symbol: activeSymbol,
-          strike: optContract.strike,
-          type: optContract.type,
-          entryPremium: optContract.premiumAsk,
-          lotSize: optSpec.lotSize,
-          expiry: optContract.expiry,
-          currency: curSym,
-          demoStatus: marketStatus.isOpen ? "executed" : "pending_market_open",
-        });
-
-        sendTelegramNotification(msg).catch((err) =>
-          console.warn("Telegram signal broadcast error:", err)
-        );
-      }
-    } catch (e) {
-      console.warn("Signal detector error:", e);
-    }
-  }, [candles, quote, activeSymbol, timeframe, isMounted]);
-
-  // 3. Multi-Asset Background Scanner (Watches all 36 Indices, MCX Commodities & 30 High-Volume F&O Stocks)
+  // 2. Autonomous Market Signal Scanner Heartbeat (invokes server-side cron route)
   useEffect(() => {
     if (!isMounted) return;
 
-    const monitoredSymbols: AssetSymbol[] = [
-      "NIFTY", "BANKNIFTY", "FINNIFTY", "CRUDEOIL", "NATURALGAS", "SENSEX",
-      "RELIANCE", "TATAMOTORS", "TATASTEEL", "HDFCBANK", "SBIN",
-      "ICICIBANK", "INFY", "TCS", "BAJFINANCE", "MARUTI",
-      "LT", "AXISBANK", "KOTAKBANK", "BHARTIARTL", "ADANIENT",
-      "ADANIPORTS", "HINDUNILVR", "ITC", "SUNPHARMA", "TITAN",
-      "JSWSTEEL", "COALINDIA", "NTPC", "POWERGRID", "BPCL",
-      "ONGC", "VEDL", "BHEL", "DLF", "BEL"
-    ];
-
-    const runMultiAssetScan = () => {
-      monitoredSymbols.forEach((sym) => {
-        if (sym === activeSymbol) return; // handled by primary active effect
-
-        const symQuote = allQuotes[sym] || INITIAL_QUOTES[sym];
-        if (!symQuote) return;
-
-        try {
-          const precision = symQuote.pipPrecision || 2;
-          const symCandles = generateRealisticCandles(sym, "15m", 80, symQuote.bid);
-          const pavp = calculatePivotAnchoredVolumeProfile(symCandles, 15, 28, 0.68, precision);
-          if (!pavp || pavp.poc <= 0) return;
-
-          const { signals } = detectPAVPSignals(symCandles, pavp, sym, precision);
-          if (!signals || signals.length === 0) return;
-
-          for (const sig of signals) {
-            const isRecent = typeof sig.candleIndex === "number" ? sig.candleIndex >= symCandles.length - 4 : true;
-            if (!isRecent) continue;
-
-            const sigKey = `${sym}_${sig.action}_${sig.time || sig.candleIndex}_${sig.levelPrice}`;
-            if (notifiedSignalKeysRef.current.has(sigKey)) continue;
-
-            notifiedSignalKeysRef.current.add(sigKey);
-
-            const optContract = getRecommendedOptionContract(sym, sig.action, symQuote.bid);
-            const optSpec = getOptionSpec(sym);
-            const curSym = symQuote.currency || "₹";
-            const marketStatus = isIndianMarketOpen(sym);
-
-            const msg = formatShortEntryMessage({
-              symbol: sym,
-              strike: optContract.strike,
-              type: optContract.type,
-              entryPremium: optContract.premiumAsk,
-              lotSize: optSpec.lotSize,
-              expiry: optContract.expiry,
-              currency: curSym,
-              demoStatus: marketStatus.isOpen ? "executed" : "pending_market_open",
-            });
-
-            sendTelegramNotification(msg).catch((err) =>
-              console.warn("Multi-asset telegram broadcast error:", err)
-            );
-
-            // If auto-bot is enabled and market is open, trigger 1 lot demo execution for this symbol!
-            setDemoAccount((prev) => {
-              if (!prev?.auto_bot?.enabled) return prev;
-              return evaluateAutoBot(prev, symQuote, alerts, allQuotes, symCandles, [sig], "15m");
-            });
-          }
-        } catch (err) {
-          // ignore scan error
-        }
-      });
+    const runSignalScanHeartbeat = async () => {
+      try {
+        await fetch("/api/cron/signals");
+      } catch (err) {
+        // silent heartbeat
+      }
     };
 
-    runMultiAssetScan();
-    const scanInterval = setInterval(runMultiAssetScan, 15000);
-    return () => clearInterval(scanInterval);
-  }, [allQuotes, activeSymbol, alerts, isMounted]);
+    // Run after 5s initial delay to allow quotes to populate, then every 30s
+    const initialTimer = setTimeout(runSignalScanHeartbeat, 5000);
+    const interval = setInterval(runSignalScanHeartbeat, 30000);
+    return () => {
+      clearTimeout(initialTimer);
+      clearInterval(interval);
+    };
+  }, [isMounted]);
 
   // 4. Pure state tick & auto-bot evaluation on live quotes and 5s heartbeat
   useEffect(() => {

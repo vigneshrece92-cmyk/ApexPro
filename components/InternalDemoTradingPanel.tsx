@@ -26,7 +26,12 @@ import {
   evaluateAutoBot,
 } from "@/lib/demoTradingEngine";
 import { getRecommendedOptionContract, getOptionSpec } from "@/lib/optionsEngine";
-import { sendTelegramNotification, formatShortEntryMessage } from "@/lib/telegramBroadcaster";
+import {
+  sendTelegramNotification,
+  formatShortEntryMessage,
+  formatShortExitMessage,
+  formatShort1ClickExecutedMessage,
+} from "@/lib/telegramBroadcaster";
 import { Quote } from "@/lib/types";
 
 interface InternalDemoTradingPanelProps {
@@ -137,11 +142,21 @@ export const InternalDemoTradingPanel: React.FC<InternalDemoTradingPanelProps> =
     if (res.success) {
       onUpdateAccount(res.state);
       setStatusMessage({ type: "success", text: res.message });
-      const newPos = res.state.open_positions[0];
-      const desc = opt ? `${newPos?.optionContractName} @ ${currencySym}${opt.premiumAsk}` : `${action} ${lotSize} Lot ${activeSymbol}`;
-      sendTelegramNotification(
-        `⚡ <b>Apex Pro Trade Executed</b>\n━━━━━━━━━━━━━━━━━━━━\n<b>Order:</b> ${desc}\n<b>Underlying:</b> ${currencySym}${fmt2(currentOpenPrice)}\n<b>Stop Loss:</b> ${currencySym}${fmt2(stopLoss)}\n<b>Take Profit:</b> ${currencySym}${fmt2(takeProfit)}\n<b>Ticket:</b> #${newPos ? newPos.ticket : ""}\n<i>Apex Pro Virtual Options Broker</i>`
-      ).catch(() => {});
+      if (opt) {
+        sendTelegramNotification(
+          formatShort1ClickExecutedMessage({
+            symbol: activeSymbol,
+            strike: opt.strike,
+            type: opt.type,
+            side: action,
+            price: opt.premiumAsk,
+            lotSize: multiplier,
+            volumeLots: lotSize,
+            expiry: opt.expiry,
+            currency: currencySym,
+          })
+        ).catch(() => {});
+      }
     } else {
       setStatusMessage({ type: "error", text: res.message });
     }
@@ -156,8 +171,16 @@ export const InternalDemoTradingPanel: React.FC<InternalDemoTradingPanelProps> =
       const curSym = closed?.currency || "₹";
       if (closed) {
         sendTelegramNotification(
-          `🎯 <b>Apex Pro Trade Closed</b>\n━━━━━━━━━━━━━━━━━━━━\n<b>Position:</b> #${ticket} ${closed.optionContractName || `${closed.type} ${closed.symbol}`}\n<b>P&L:</b> ${closed.profit >= 0 ? "🟢 +" : "🔴 -"}${curSym}${Math.abs(closed.profit).toFixed(2)}\n<b>Close Price:</b> ${curSym}${closed.price_close.toFixed(2)}\n<b>Exit Reason:</b> ${closed.close_reason}\n<i>Apex Pro Virtual Broker</i>`
-        );
+          formatShortExitMessage({
+            symbol: closed.symbol,
+            contractName: closed.optionContractName,
+            profit: closed.profit,
+            closePrice: closed.price_close,
+            closeReason: closed.close_reason,
+            currency: curSym,
+            ticket: closed.ticket,
+          })
+        ).catch(() => {});
       }
     } else {
       setStatusMessage({ type: "error", text: res.message });

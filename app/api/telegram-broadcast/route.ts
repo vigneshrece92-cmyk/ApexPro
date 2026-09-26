@@ -5,10 +5,51 @@ if (typeof process !== "undefined" && process.env) {
   process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
 }
 
+function extractDedupKey(message: string): { key: string; windowMs: number } {
+  // Strip HTML tags and normalize whitespace
+  const plain = message.replace(/<[^>]*>/g, "").replace(/\s+/g, " ").trim();
+  const firstLine = plain.split("\n")[0] || plain;
+  const upper = firstLine.toUpperCase();
+
+  // 1. Entry Signal (e.g., "BUY CRUDEOIL 9150 CE", "BUY DLF 670 CE", "BUY NIFTY 24850 PE")
+  const entryMatch = upper.match(/(BUY|SELL)\s+([A-Z0-9_\-]+)\s+(\d+(?:\.\d+)?)\s+(CE|PE)/);
+  if (entryMatch) {
+    const [, side, sym, strike, type] = entryMatch;
+    return {
+      key: `ENTRY_${side}_${sym}_${strike}_${type}`,
+      windowMs: 10 * 60 * 1000, // 10-minute cooldown window for the exact same contract
+    };
+  }
+
+  // 2. Auto-bot or 1-Click execution
+  if (upper.includes("AUTO-BOT") || upper.includes("EXECUTED")) {
+    const cleaned = upper.replace(/[^A-Z0-9_]/g, "_").slice(0, 80);
+    return {
+      key: `EXEC_${cleaned}`,
+      windowMs: 5 * 60 * 1000, // 5-minute cooldown
+    };
+  }
+
+  // 3. Exit alerts
+  if (upper.includes("EXIT") || upper.includes("CLOSED")) {
+    const cleaned = upper.replace(/[^A-Z0-9_]/g, "_").slice(0, 80);
+    return {
+      key: `EXIT_${cleaned}`,
+      windowMs: 2 * 60 * 1000, // 2-minute cooldown
+    };
+  }
+
+  // 4. Default fallback
+  const fallbackKey = upper.replace(/[^A-Z0-9_]/g, "").slice(0, 80);
+  return {
+    key: `GEN_${fallbackKey}`,
+    windowMs: 60 * 1000, // 1-minute cooldown
+  };
+}
+
 // Server-side anti-spam firewall to strictly prevent alert flooding
 let lastBroadcastTimestamp = 0;
 const recentMessageHashes = new Map<string, number>();
-const DEDUP_WINDOW_MS = 180000; // 3 minutes deduplication window for identical messages
 
 export async function POST(req: NextRequest) {
   try {
@@ -34,27 +75,28 @@ export async function POST(req: NextRequest) {
       await new Promise((resolve) => setTimeout(resolve, throttleMs - timeSinceLast));
     }
 
-    // 2. Content deduplication check (prevents identical repeated alerts within 45s)
+    // 2. Smart Contract & Content Deduplication Check
     if (!isTest) {
-      // Key on the first 120 chars (includes instrument, direction, and level)
-      const normalizedKey = message.slice(0, 120).replace(/\d{2}:\d{2}:\d{2}/g, "").trim();
+      const { key: dedupKey, windowMs } = extractDedupKey(message);
+      const lastSeen = recentMessageHashes.get(dedupKey);
 
-      const lastSeen = recentMessageHashes.get(normalizedKey);
-      if (lastSeen && Date.now() - lastSeen < 45000) {
-        console.warn("[Telegram Firewall] Duplicate message dropped within 45s window.");
+      if (lastSeen && now - lastSeen < windowMs) {
+        const remainingSec = Math.ceil((windowMs - (now - lastSeen)) / 1000);
+        console.warn(`[Telegram Firewall] Duplicate alert dropped for key '${dedupKey}'. Cooldown remaining: ${remainingSec}s`);
         return NextResponse.json({
           success: true,
           throttled: true,
-          message: "Duplicate alert dropped within anti-spam window.",
+          message: `Duplicate alert dropped within anti-spam window (${remainingSec}s remaining).`,
         });
       }
-      recentMessageHashes.set(normalizedKey, Date.now());
+      recentMessageHashes.set(dedupKey, now);
     }
 
-    // Cleanup old hashes periodically
+    // Prune stale hashes older than 30 minutes
     if (recentMessageHashes.size > 200) {
+      const expiry = now - 30 * 60 * 1000;
       recentMessageHashes.forEach((time, key) => {
-        if (now - time > DEDUP_WINDOW_MS) {
+        if (time < expiry) {
           recentMessageHashes.delete(key);
         }
       });
