@@ -17,6 +17,8 @@ import {
   Layers,
   Bell,
   Zap,
+  Download,
+  Smartphone,
 } from "lucide-react";
 
 interface HeaderProps {
@@ -37,6 +39,7 @@ interface HeaderProps {
   demoBalance?: number;
   autoBotEnabled?: boolean;
   externalQuotes?: Record<AssetSymbol, Quote>;
+  onOpenInstallApp?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -57,6 +60,7 @@ export const Header: React.FC<HeaderProps> = ({
   demoBalance = 1000000.0,
   autoBotEnabled = true,
   externalQuotes,
+  onOpenInstallApp,
 }) => {
   const [quotes, setQuotes] = useState<Record<AssetSymbol, Quote>>(externalQuotes || INITIAL_QUOTES);
   const [tickDirection, setTickDirection] = useState<Record<string, "up" | "down">>({});
@@ -304,6 +308,19 @@ export const Header: React.FC<HeaderProps> = ({
             <Clock className="w-3.5 h-3.5 text-gold" />
             <span>Market Hours</span>
           </button>
+
+          {/* Add to Home Screen / Install PWA App Button */}
+          {onOpenInstallApp && (
+            <button
+              onClick={onOpenInstallApp}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold rounded-md bg-gradient-to-r from-cyan-500/20 via-blue-600/25 to-indigo-600/25 hover:from-cyan-500/30 hover:to-indigo-600/35 text-cyan-300 hover:text-white border border-cyan-500/40 transition-all shadow-sm shadow-cyan-500/10"
+              title="Add Apex Pro to Home Screen (Android & Apple iOS)"
+            >
+              <Download className="w-3.5 h-3.5 text-cyan-400" />
+              <span className="hidden sm:inline">Install App</span>
+              <span className="sm:hidden">Install</span>
+            </button>
+          )}
 
           {/* Settings */}
           <button

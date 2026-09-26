@@ -37,6 +37,7 @@ import { InstitutionalAlertsHub } from "@/components/InstitutionalAlertsHub";
 import { ActiveAlertsRibbon } from "@/components/ActiveAlertsRibbon";
 import { MT5TradingPanel } from "@/components/MT5TradingPanel";
 import { InternalDemoTradingPanel } from "@/components/InternalDemoTradingPanel";
+import { AddToHomeScreenModal, FloatingInstallBanner } from "@/components/AddToHomeScreenModal";
 import {
   DemoAccountState,
   INITIAL_ACCOUNT_STATE,
@@ -108,7 +109,23 @@ export default function TerminalDashboard() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isPropGuardianOpen, setIsPropGuardianOpen] = useState(false);
   const [isDispatcherOpen, setIsDispatcherOpen] = useState(false);
+  const [isInstallModalOpen, setIsInstallModalOpen] = useState(false);
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [geminiApiKey, setGeminiApiKey] = useState<string>("");
+
+  // Listen to native browser PWA beforeinstallprompt (Android / Chrome / Edge)
+  useEffect(() => {
+    const handleBeforeInstallPrompt = (e: Event) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+    };
+
+    window.addEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
+
+    return () => {
+      window.removeEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
+    };
+  }, []);
 
   // Safely hydrate client-only state from localStorage on mount (eliminates SSR hydration mismatch)
   useEffect(() => {
@@ -501,6 +518,7 @@ export default function TerminalDashboard() {
         mt5Balance={mt5AccountData.balance}
         mt5Connected={mt5AccountData.connected}
         externalQuotes={allQuotes}
+        onOpenInstallApp={() => setIsInstallModalOpen(true)}
       />
 
       {/* Main Terminal Workspace */}
@@ -659,6 +677,15 @@ export default function TerminalDashboard() {
         isOpen={isMT5PanelOpen}
         onClose={() => setIsMT5PanelOpen(false)}
         prefillSetup={mt5PrefillSetup}
+      />
+      <AddToHomeScreenModal
+        isOpen={isInstallModalOpen}
+        onClose={() => setIsInstallModalOpen(false)}
+        deferredPrompt={deferredPrompt}
+      />
+      <FloatingInstallBanner
+        onOpenModal={() => setIsInstallModalOpen(true)}
+        deferredPrompt={deferredPrompt}
       />
     </div>
   );
