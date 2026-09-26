@@ -277,23 +277,23 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    // Default ultra-compact response (< 80 bytes) optimized for cron-job.org payload limits
-    return NextResponse.json({
-      ok: true,
-      scanned: results.length,
-      triggered: triggeredCount,
+    // Ultra-compact 2-byte response for cron-job.org and external uptime monitors
+    return new Response("OK", {
+      status: 200,
+      headers: { "Content-Type": "text/plain" },
     });
   } catch (error) {
-    return NextResponse.json(
-      {
-        success: false,
-        error: error instanceof Error ? error.message : "Cron execution error",
-      },
-      { status: 500 }
-    );
+    return new Response("ERROR", {
+      status: 500,
+      headers: { "Content-Type": "text/plain" },
+    });
   }
 }
 
 export async function POST(req: NextRequest) {
   return GET(req);
+}
+
+export async function HEAD() {
+  return new Response(null, { status: 200 });
 }
