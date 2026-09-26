@@ -779,33 +779,32 @@ export function tickDemoPositions(
     }
 
     if (tpHit) {
-      positionsToClose.push({ ticket: pos.ticket, reason: "Take Profit Hit" });
+      const res = closeDemoPosition(stateCopy, pos.ticket, quote, "Take Profit Hit");
+      if (res.success) {
+        stateCopy = res.state;
+      }
       continue;
     }
 
     // 2. Check Stop Loss Hit
     let slHit = false;
     if (isPremiumSLTP) {
-      // Option Premium stop loss hit
       if (pos.sl > 0 && currentPremium <= pos.sl) {
         slHit = true;
       }
     } else if (isPE) {
-      // Put Option: Spot rising above SL triggers Stop Loss
       if (pos.sl > 0) {
         if (pos.be_triggered ? currentPrice >= pos.sl : (pos.sl > pos.price_open && currentPrice >= pos.sl)) {
           slHit = true;
         }
       }
     } else if (isCE || pos.type === "BUY") {
-      // Call Option or BUY: Spot falling below SL triggers Stop Loss
       if (pos.sl > 0) {
         if (pos.be_triggered ? currentPrice <= pos.sl : (pos.sl < pos.price_open && currentPrice <= pos.sl)) {
           slHit = true;
         }
       }
     } else {
-      // SELL / Short: Spot rising above SL triggers Stop Loss
       if (pos.sl > 0) {
         if (pos.be_triggered ? currentPrice >= pos.sl : (pos.sl > pos.price_open && currentPrice >= pos.sl)) {
           slHit = true;
@@ -814,10 +813,11 @@ export function tickDemoPositions(
     }
 
     if (slHit) {
-      positionsToClose.push({
-        ticket: pos.ticket,
-        reason: pos.be_triggered ? "Break-Even Exit" : "Stop Loss Hit",
-      });
+      const reason: ClosedTrade["close_reason"] = pos.be_triggered ? "Break-Even Exit" : "Stop Loss Hit";
+      const res = closeDemoPosition(stateCopy, pos.ticket, quote, reason);
+      if (res.success) {
+        stateCopy = res.state;
+      }
       continue;
     }
 
@@ -853,15 +853,11 @@ export function tickDemoPositions(
     updatedPositions.push(updatedPos);
   }
 
-  stateCopy.open_positions = updatedPositions;
-
-  // Execute queued auto-closures
-  for (const item of positionsToClose) {
-    const res = closeDemoPosition(stateCopy, item.ticket, quote, item.reason);
-    if (res.success) {
-      stateCopy = res.state;
-    }
-  }
+  // Update remaining open positions in stateCopy with updated prices/profits
+  const remainingTickets = new Set(updatedPositions.map((p) => p.ticket));
+  stateCopy.open_positions = stateCopy.open_positions
+    .filter((p) => remainingTickets.has(p.ticket))
+    .map((p) => updatedPositions.find((u) => u.ticket === p.ticket) || p);
 
   // Recalculate totals
   let totalProfit = 0;
